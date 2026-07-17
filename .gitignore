@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+outputs/
+reports/
+.DS_Store
+
+# Raw telemetry is too large for git (hundreds of MB) and may be
+# access-restricted research data; keep the folder but not its contents.
+data/*
+!data/.gitkeep
