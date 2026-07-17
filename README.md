@@ -4,18 +4,21 @@ This workspace contains a rapid research prototype for local forecasting and edg
 
 ## What is included
 
-- A single reproducible Python pipeline in [pipeline.py](pipeline.py) that:
-  - discovers the EV charger columns present in the dataset,
-  - aggregates raw telemetry into 15-minute intervals,
-  - trains two XGBoost regressors for next-step PV and EV-demand forecasting,
-  - simulates a deterministic edge load-shaping decision,
-  - writes metrics, plots, and model artifacts to `outputs/`.
+- A small package, [evloadshaping/](evloadshaping/), that:
+  - discovers the EV charger columns present in the dataset and loads only the columns it needs ([data.py](evloadshaping/data.py)),
+  - resamples raw telemetry into 15-minute intervals and engineers the lag/rolling/cyclical features ([features.py](evloadshaping/features.py)),
+  - trains the XGBoost forecasters and the persistence/ridge baselines ([models.py](evloadshaping/models.py)),
+  - implements the deterministic edge load-shaping decision and its grid-limit sensitivity sweep ([orchestrator.py](evloadshaping/orchestrator.py)),
+  - computes the temporal-error and per-charger-utilization breakdowns ([analysis.py](evloadshaping/analysis.py)),
+  - and plots the forecast traces and sensitivity curves ([plotting.py](evloadshaping/plotting.py)).
+- A thin CLI entry point in [pipeline.py](pipeline.py) (`evloadshaping/cli.py` underneath) that runs the full pipeline end to end and writes metrics, plots, and model artifacts to `outputs/`.
+- Three notebooks in [notebooks/](notebooks/) that walk through the same building blocks interactively — see below.
 - A minimal dependency list in [requirements.txt](requirements.txt).
 - A Docker image for local edge-style execution in [Dockerfile](Dockerfile).
 
 ## Dataset note
 
-This repository does not include the raw telemetry CSV: it is several hundred megabytes and is not distributed with the source. To run the pipeline, place your own UMA Adabyron export (or a compatible CSV with the same column naming convention) at `data/20260514_uma_adabyron_data.csv`, or pass a different path via `--data-path`. The pipeline discovers whichever EV charger columns are present in the header and only loads the columns it needs, so it adapts automatically to datasets with a different charger count.
+This repository does not include the raw telemetry CSV. The UMA Adabyron dataset is private and available on request from its maintainers, not redistributed here. To run the pipeline, place your own export (or a compatible CSV with the same column naming convention) at `data/20260514_uma_adabyron_data.csv`, or pass a different path via `--data-path`. The pipeline discovers whichever EV charger columns are present in the header and only loads the columns it needs, so it adapts automatically to datasets with a different charger count.
 
 ## Local setup
 
@@ -32,6 +35,23 @@ For faster iteration, limit the rows during development:
 
 ```bash
 python pipeline.py --data-path data/20260514_uma_adabyron_data.csv --max-rows 50000
+```
+
+## Notebooks
+
+[notebooks/](notebooks/) walks through the same pipeline interactively, split across three notebooks:
+
+1. [01_data_exploration.ipynb](notebooks/01_data_exploration.ipynb) — load the raw telemetry, resample it, and look at the PV/EV signals and their correlations before any modeling.
+2. [02_forecasting_and_baselines.ipynb](notebooks/02_forecasting_and_baselines.ipynb) — train the XGBoost forecasters, compare them against the persistence and ridge baselines, and inspect feature importance.
+3. [03_orchestrator_and_sensitivity.ipynb](notebooks/03_orchestrator_and_sensitivity.ipynb) — run the deterministic orchestrator, sweep the safe grid-limit parameter, and break down forecast error by time of day and by charger.
+
+Each notebook is self-contained (it reloads and rebuilds whatever it needs), so they can be run independently and in any order. They import directly from the `evloadshaping` package rather than duplicating logic.
+
+Install the extra notebook dependencies (on top of `requirements.txt`) and register a kernel:
+
+```bash
+pip install -r requirements-notebooks.txt
+jupyter lab notebooks/
 ```
 
 ## Outputs

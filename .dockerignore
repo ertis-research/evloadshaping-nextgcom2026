@@ -6,3 +6,5 @@ reports/
 .DS_Store
 .git/
 data/*.csv
+notebooks/
+.ipynb_checkpoints/

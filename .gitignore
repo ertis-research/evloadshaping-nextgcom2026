@@ -4,6 +4,7 @@ __pycache__/
 outputs/
 reports/
 .DS_Store
+.ipynb_checkpoints/
 
 # Raw telemetry is too large for git (hundreds of MB) and may be
 # access-restricted research data; keep the folder but not its contents.
