@@ -20,6 +20,10 @@ Three input representations are used, on purpose:
     as XGBoost/MLP, closing the remaining fairness gap: whether a learned
     temporal representation still helps once it is not starved of the
     hand-engineered signal either.
+
+Each of the four configurations is retrained from scratch across SEEDS and
+reported as mean +/- std, so a single lucky/unlucky initialization can't be
+mistaken for a real effect.
 """
 
 from __future__ import annotations
@@ -47,7 +51,7 @@ from .config import BASE_ONLY_FEATURE_COLUMNS
 from .models import evaluate_model
 
 SEQUENCE_WINDOW = 8  # 2 hours of 15-minute steps
-RANDOM_SEED = 42
+SEEDS = (42, 43, 44, 45, 46)  # each DL config is retrained per seed to report mean +/- std
 
 
 def _device() -> torch.device:
@@ -148,8 +152,13 @@ def _train_regressor(
     The held-out test split is never touched here -- it is only used for the
     final evaluate_model call in run_torch_comparison, after training and
     model selection are both finished.
+
+    Deliberately does not reseed here: callers already call torch.manual_seed
+    immediately before constructing the model, and nothing consumes RNG state
+    between construction and this call, so reseeding here would silently pin
+    the DataLoader's shuffle order to whatever value last reseeded regardless
+    of which seed the caller intended -- defeating multi-seed runs.
     """
-    torch.manual_seed(RANDOM_SEED)
     device = _device()
     model = model.to(device)
 
@@ -215,6 +224,24 @@ def _standardize_target(train: np.ndarray) -> tuple[float, float]:
     return mean, (std if std > 0 else 1.0)
 
 
+def _aggregate_seeds(per_seed_metrics: list[dict[str, float]]) -> dict[str, float]:
+    """Collapse a list of per-seed evaluate_model outputs into mean +/- std.
+
+    Reports mean under the original "mae"/"rmse" keys (so existing CSV/print
+    consumers keep working unchanged) plus "*_std" across SEEDS, since a
+    single-seed DL number is otherwise indistinguishable from run-to-run
+    training variance rather than a real effect.
+    """
+    maes = np.array([m["mae"] for m in per_seed_metrics])
+    rmses = np.array([m["rmse"] for m in per_seed_metrics])
+    return {
+        "mae": float(maes.mean()),
+        "mae_std": float(maes.std(ddof=1)),
+        "rmse": float(rmses.mean()),
+        "rmse_std": float(rmses.std(ddof=1)),
+    }
+
+
 def run_torch_comparison(
     x_train: pd.DataFrame,
     x_test: pd.DataFrame,
@@ -243,26 +270,24 @@ def run_torch_comparison(
             x_test.to_numpy(dtype=np.float32),
         )
         y_mean, y_std = _standardize_target(y_tr.to_numpy(dtype=np.float32))
+        y_tr_s = (y_tr.to_numpy(dtype=np.float32) - y_mean) / y_std
+        y_val_s = (y_val.to_numpy(dtype=np.float32) - y_mean) / y_std
 
-        # Seed immediately before construction: nn.Module init draws from the
-        # global RNG at construction time, before _train_regressor ever runs,
-        # so seeding only inside _train_regressor left initial weights
-        # dependent on whatever RNG state preceded this call (i.e. not
-        # actually reproducible run-to-run despite RANDOM_SEED existing).
-        torch.manual_seed(RANDOM_SEED)
-        model = MLPRegressor(input_dim=x_tr_s.shape[1])
-        model = _train_regressor(
-            model,
-            x_tr_s,
-            ((y_tr.to_numpy(dtype=np.float32) - y_mean) / y_std),
-            x_val_s,
-            ((y_val.to_numpy(dtype=np.float32) - y_mean) / y_std),
-        )
-        model.eval()
-        with torch.no_grad():
-            preds_std = model(torch.from_numpy(x_test_s).to(device)).cpu().numpy()
-        preds = preds_std * y_std + y_mean
-        results.setdefault("mlp", {})[target_name] = evaluate_model(y_test, preds)
+        # Retrain across SEEDS and report mean +/- std: a single-seed DL number
+        # can't be told apart from ordinary training-variance noise, and
+        # nn.Module init draws from the global RNG at construction time, so
+        # each seed must be set immediately before its own model constructor.
+        per_seed = []
+        for seed in SEEDS:
+            torch.manual_seed(seed)
+            model = MLPRegressor(input_dim=x_tr_s.shape[1])
+            model = _train_regressor(model, x_tr_s, y_tr_s, x_val_s, y_val_s)
+            model.eval()
+            with torch.no_grad():
+                preds_std = model(torch.from_numpy(x_test_s).to(device)).cpu().numpy()
+            preds = preds_std * y_std + y_mean
+            per_seed.append(evaluate_model(y_test, preds))
+        results.setdefault("mlp", {})[target_name] = _aggregate_seeds(per_seed)
 
     # --- LSTM / CNN on raw sequence windows of the base (non-lagged) channels ---
     channels = [c for c in BASE_ONLY_FEATURE_COLUMNS if c in x_train.columns]
@@ -289,17 +314,22 @@ def run_torch_comparison(
             ("lstm", LSTMRegressor, {"n_channels": len(channels)}),
             ("cnn", CNN1DRegressor, {"n_channels": len(channels)}),
         ):
-            torch.manual_seed(RANDOM_SEED)
-            model = model_cls(**model_kwargs)
-            trained = _train_regressor(model, seq_tr_s, tgt_tr_s, seq_val_s, tgt_val_s)
-            trained.eval()
-            with torch.no_grad():
-                preds_std = (
-                    trained(torch.from_numpy(seq_test_s).to(device)).cpu().numpy()
+            per_seed = []
+            for seed in SEEDS:
+                torch.manual_seed(seed)
+                model = model_cls(**model_kwargs)
+                trained = _train_regressor(
+                    model, seq_tr_s, tgt_tr_s, seq_val_s, tgt_val_s
                 )
-            preds = preds_std * y_std + y_mean
-            results.setdefault(model_name, {})[target_name] = evaluate_model(
-                target_test, preds
+                trained.eval()
+                with torch.no_grad():
+                    preds_std = (
+                        trained(torch.from_numpy(seq_test_s).to(device)).cpu().numpy()
+                    )
+                preds = preds_std * y_std + y_mean
+                per_seed.append(evaluate_model(target_test, preds))
+            results.setdefault(model_name, {})[target_name] = _aggregate_seeds(
+                per_seed
             )
 
     # --- LSTM on sequence windows of the full engineered feature set, i.e. the
@@ -325,15 +355,20 @@ def run_torch_comparison(
         tgt_tr_s = (tgt_tr - y_mean) / y_std
         tgt_val_s = (tgt_val - y_mean) / y_std
 
-        torch.manual_seed(RANDOM_SEED)
-        model = LSTMRegressor(n_channels=len(feature_channels))
-        trained = _train_regressor(model, seq_tr_s, tgt_tr_s, seq_val_s, tgt_val_s)
-        trained.eval()
-        with torch.no_grad():
-            preds_std = trained(torch.from_numpy(seq_test_s).to(device)).cpu().numpy()
-        preds = preds_std * y_std + y_mean
-        results.setdefault("lstm_features", {})[target_name] = evaluate_model(
-            target_test, preds
+        per_seed = []
+        for seed in SEEDS:
+            torch.manual_seed(seed)
+            model = LSTMRegressor(n_channels=len(feature_channels))
+            trained = _train_regressor(model, seq_tr_s, tgt_tr_s, seq_val_s, tgt_val_s)
+            trained.eval()
+            with torch.no_grad():
+                preds_std = (
+                    trained(torch.from_numpy(seq_test_s).to(device)).cpu().numpy()
+                )
+            preds = preds_std * y_std + y_mean
+            per_seed.append(evaluate_model(target_test, preds))
+        results.setdefault("lstm_features", {})[target_name] = _aggregate_seeds(
+            per_seed
         )
 
     return results

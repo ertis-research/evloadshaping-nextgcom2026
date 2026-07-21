@@ -229,7 +229,7 @@ def main() -> None:
     torch_results = None
     if args.include_torch:
         print("Training PyTorch MLP/LSTM/CNN comparison (this takes a while)...")
-        from .torch_models import run_torch_comparison  # lazy: torch is optional
+        from .torch_models import SEEDS, run_torch_comparison  # lazy: torch is optional
 
         torch_results = run_torch_comparison(
             x_train, x_test, y_pv_train, y_pv_test, y_ev_train, y_ev_test
@@ -266,8 +266,9 @@ def main() -> None:
             pv_m = torch_results[model_name]["pv"]
             ev_m = torch_results[model_name]["ev"]
             print(
-                f"{model_name.upper():5s} PV MAE: {pv_m['mae']:.2f} W | "
-                f"EV MAE: {ev_m['mae']:.2f} W"
+                f"{model_name.upper():5s} PV MAE: {pv_m['mae']:.2f} +/- {pv_m['mae_std']:.2f} W | "
+                f"EV MAE: {ev_m['mae']:.2f} +/- {ev_m['mae_std']:.2f} W "
+                f"(across {len(SEEDS)} seeds)"
             )
 
     summary = {
