@@ -1,6 +1,5 @@
 # Extra dependency for the PyTorch architecture comparison (evloadshaping/torch_models.py
-# and notebooks/04_deep_learning_comparison.ipynb). Not installed in the Docker image and
-# not imported by the default CLI pipeline -- only needed if you pass --include-torch or
-# run the deep-learning notebook.
+# and notebooks/04_deep_learning_comparison.ipynb). Not imported by the default CLI
+# pipeline -- only needed if you pass --include-torch or run the deep-learning notebook.
 -r requirements.txt
 torch>=2.8,<3

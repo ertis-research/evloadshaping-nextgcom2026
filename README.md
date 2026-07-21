@@ -15,7 +15,6 @@ This workspace contains a rapid research prototype for local forecasting and edg
 - A thin CLI entry point in [pipeline.py](pipeline.py) (`evloadshaping/cli.py` underneath) that runs the full pipeline end to end and writes metrics, plots, and model artifacts to `outputs/`.
 - Four notebooks in [notebooks/](notebooks/) that walk through the same building blocks interactively — see below.
 - A minimal dependency list in [requirements.txt](requirements.txt).
-- A Docker image for local edge-style execution in [Dockerfile](Dockerfile).
 
 ## Dataset note
 
@@ -84,17 +83,6 @@ The pipeline writes the following files to `outputs/`:
 - `charger_utilization.csv` — per-charger total energy delivered and active-charging share over the full telemetry span.
 - `orchestrator_events_<grid_limit>w.csv`, `orchestrator_events_1000w.csv` — one row per triggered throttle event at the run's `--grid-limit` and at a fixed 1 kW stress case, including a `genuine_risk` flag computed from actual (not forecasted) PV/EV values. The default grid limit triggers too rarely to assess control quality from the aggregate rate alone, so these logs let each event be checked individually instead of only counted.
 - `summary.json` — consolidated run summary including all of the above.
-
-## Docker
-
-Build and run the container locally:
-
-```bash
-docker build -t ev-load-shaping .
-docker run --rm -v $(pwd)/data:/app/data -v $(pwd)/outputs:/app/outputs ev-load-shaping
-```
-
-The dataset and generated outputs are mounted as volumes rather than baked into the image (see `.dockerignore`), since the raw CSV is not part of the repository.
 
 ## Research framing
 

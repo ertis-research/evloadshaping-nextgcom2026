@@ -1,6 +1,5 @@
 # Extra dependencies for running the notebooks/ walkthroughs locally.
-# Not installed in the Docker image (see .dockerignore) -- the CLI pipeline
-# only needs requirements.txt.
+# Not needed for the default CLI pipeline, which only requires requirements.txt.
 -r requirements.txt
 jupyter>=1.0,<2
 ipykernel>=6.31,<7
