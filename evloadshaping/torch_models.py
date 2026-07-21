@@ -7,14 +7,19 @@ pipeline (see cli.py's --include-torch flag), so a standard edge deployment
 does not need PyTorch installed -- consistent with the project's lightweight,
 edge-deployable framing.
 
-Two distinct input representations are used, on purpose:
+Three input representations are used, on purpose:
   * MLPRegressor consumes the identical full engineered feature set used by
     XGBoost/ridge, isolating whether a neural net's nonlinearity helps over a
     tree ensemble on the same inputs.
-  * LSTMRegressor and CNN1DRegressor instead consume raw SEQUENCE_WINDOW-step
+  * LSTMRegressor and CNN1DRegressor consume raw SEQUENCE_WINDOW-step
     sequences of the base (non-lagged) variables, testing whether a learned
     temporal representation can substitute for hand-engineered lag/rolling
     features rather than just re-deriving them.
+  * A second LSTMRegressor ("lstm_features") instead consumes
+    SEQUENCE_WINDOW-step sequences of the *same* full engineered feature set
+    as XGBoost/MLP, closing the remaining fairness gap: whether a learned
+    temporal representation still helps once it is not starved of the
+    hand-engineered signal either.
 """
 
 from __future__ import annotations
@@ -239,6 +244,12 @@ def run_torch_comparison(
         )
         y_mean, y_std = _standardize_target(y_tr.to_numpy(dtype=np.float32))
 
+        # Seed immediately before construction: nn.Module init draws from the
+        # global RNG at construction time, before _train_regressor ever runs,
+        # so seeding only inside _train_regressor left initial weights
+        # dependent on whatever RNG state preceded this call (i.e. not
+        # actually reproducible run-to-run despite RANDOM_SEED existing).
+        torch.manual_seed(RANDOM_SEED)
         model = MLPRegressor(input_dim=x_tr_s.shape[1])
         model = _train_regressor(
             model,
@@ -274,10 +285,12 @@ def run_torch_comparison(
         tgt_tr_s = (tgt_tr - y_mean) / y_std
         tgt_val_s = (tgt_val - y_mean) / y_std
 
-        for model_name, model in (
-            ("lstm", LSTMRegressor(n_channels=len(channels))),
-            ("cnn", CNN1DRegressor(n_channels=len(channels))),
+        for model_name, model_cls, model_kwargs in (
+            ("lstm", LSTMRegressor, {"n_channels": len(channels)}),
+            ("cnn", CNN1DRegressor, {"n_channels": len(channels)}),
         ):
+            torch.manual_seed(RANDOM_SEED)
+            model = model_cls(**model_kwargs)
             trained = _train_regressor(model, seq_tr_s, tgt_tr_s, seq_val_s, tgt_val_s)
             trained.eval()
             with torch.no_grad():
@@ -288,5 +301,39 @@ def run_torch_comparison(
             results.setdefault(model_name, {})[target_name] = evaluate_model(
                 target_test, preds
             )
+
+    # --- LSTM on sequence windows of the full engineered feature set, i.e. the
+    # same inputs XGBoost/MLP receive, so the raw-sequence LSTM/CNN above are
+    # not the only temporal-model data point ---
+    feature_channels = list(x_train.columns)
+
+    for target_name, y_train_full, y_test in (
+        ("pv", y_pv_train, y_pv_test),
+        ("ev", y_ev_train, y_ev_test),
+    ):
+        seq_train_all, target_train_all = build_sequence_windows(
+            x_train, y_train_full, feature_channels
+        )
+        seq_test, target_test = build_sequence_windows(x_test, y_test, feature_channels)
+
+        val_n = max(1, int(len(seq_train_all) * 0.1))
+        seq_tr, seq_val = seq_train_all[:-val_n], seq_train_all[-val_n:]
+        tgt_tr, tgt_val = target_train_all[:-val_n], target_train_all[-val_n:]
+
+        seq_tr_s, seq_val_s, seq_test_s = _standardize(seq_tr, seq_val, seq_test)
+        y_mean, y_std = _standardize_target(tgt_tr)
+        tgt_tr_s = (tgt_tr - y_mean) / y_std
+        tgt_val_s = (tgt_val - y_mean) / y_std
+
+        torch.manual_seed(RANDOM_SEED)
+        model = LSTMRegressor(n_channels=len(feature_channels))
+        trained = _train_regressor(model, seq_tr_s, tgt_tr_s, seq_val_s, tgt_val_s)
+        trained.eval()
+        with torch.no_grad():
+            preds_std = trained(torch.from_numpy(seq_test_s).to(device)).cpu().numpy()
+        preds = preds_std * y_std + y_mean
+        results.setdefault("lstm_features", {})[target_name] = evaluate_model(
+            target_test, preds
+        )
 
     return results

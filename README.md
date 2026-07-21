@@ -11,7 +11,7 @@ This workspace contains a rapid research prototype for local forecasting and edg
   - implements the deterministic edge load-shaping decision and its grid-limit sensitivity sweep ([orchestrator.py](evloadshaping/orchestrator.py)),
   - computes the temporal-error and per-charger-utilization breakdowns ([analysis.py](evloadshaping/analysis.py)),
   - plots the forecast traces and sensitivity curves ([plotting.py](evloadshaping/plotting.py)),
-  - and optionally trains a PyTorch MLP/LSTM/1-D CNN comparison against the same held-out split ([torch_models.py](evloadshaping/torch_models.py)) — a strictly optional add-on, never imported by default.
+  - and optionally trains a PyTorch MLP/LSTM/1-D CNN comparison — plus a second LSTM given XGBoost's own engineered features, closing the input asymmetry with the raw-sequence models — against the same held-out split ([torch_models.py](evloadshaping/torch_models.py)) — a strictly optional add-on, never imported by default.
 - A thin CLI entry point in [pipeline.py](pipeline.py) (`evloadshaping/cli.py` underneath) that runs the full pipeline end to end and writes metrics, plots, and model artifacts to `outputs/`.
 - Four notebooks in [notebooks/](notebooks/) that walk through the same building blocks interactively — see below.
 - A minimal dependency list in [requirements.txt](requirements.txt).
@@ -77,7 +77,7 @@ The pipeline writes the following files to `outputs/`:
 - `forecast_plot.png` — forecast trace over the full test horizon (each day is a sliver at this scale; useful as a coverage sanity check, not for reading forecast quality).
 - `forecast_plot_zoom.png` — the same traces over a two-week window chosen for typical (not spike) EV demand, readable at daily resolution.
 - `baseline_comparison.csv` — XGBoost vs. persistence vs. ridge regression, MAE/RMSE per target.
-- `baseline_comparison_with_torch.csv` — the above plus the PyTorch MLP/LSTM/CNN comparison (only written with `--include-torch`).
+- `baseline_comparison_with_torch.csv` — the above plus the PyTorch MLP/LSTM/CNN comparison and the engineered-feature LSTM variant (only written with `--include-torch`).
 - `ablation_study.csv` — base (current-timestep only) vs. full engineered feature set.
 - `grid_sensitivity.csv`, `grid_sensitivity_plot.png` — throttle rate and mean per-EV reduction swept across safe grid limits.
 - `hourly_error_breakdown.csv` — forecast MAE bucketed by time of day.

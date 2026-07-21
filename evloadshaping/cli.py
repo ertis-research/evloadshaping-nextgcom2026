@@ -250,7 +250,7 @@ def main() -> None:
             {"model": "xgboost", "target": "pv", **pv_metrics},
             {"model": "xgboost", "target": "ev", **ev_metrics},
         ]
-        for model_name in ("mlp", "lstm", "cnn"):
+        for model_name in ("mlp", "lstm", "cnn", "lstm_features"):
             for target_name in ("pv", "ev"):
                 rows.append(
                     {
@@ -262,7 +262,7 @@ def main() -> None:
         pd.DataFrame(rows).to_csv(
             args.output_dir / "baseline_comparison_with_torch.csv", index=False
         )
-        for model_name in ("mlp", "lstm", "cnn"):
+        for model_name in ("mlp", "lstm", "cnn", "lstm_features"):
             pv_m = torch_results[model_name]["pv"]
             ev_m = torch_results[model_name]["ev"]
             print(
