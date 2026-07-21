@@ -82,6 +82,7 @@ The pipeline writes the following files to `outputs/`:
 - `grid_sensitivity.csv`, `grid_sensitivity_plot.png` — throttle rate and mean per-EV reduction swept across safe grid limits.
 - `hourly_error_breakdown.csv` — forecast MAE bucketed by time of day.
 - `charger_utilization.csv` — per-charger total energy delivered and active-charging share over the full telemetry span.
+- `orchestrator_events_<grid_limit>w.csv`, `orchestrator_events_1000w.csv` — one row per triggered throttle event at the run's `--grid-limit` and at a fixed 1 kW stress case, including a `genuine_risk` flag computed from actual (not forecasted) PV/EV values. The default grid limit triggers too rarely to assess control quality from the aggregate rate alone, so these logs let each event be checked individually instead of only counted.
 - `summary.json` — consolidated run summary including all of the above.
 
 ## Docker

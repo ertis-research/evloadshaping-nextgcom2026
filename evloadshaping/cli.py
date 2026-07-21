@@ -27,6 +27,7 @@ from .models import (
 from .orchestrator import (
     edge_orchestrator,
     grid_limit_sensitivity,
+    orchestrator_event_log,
     summarize_orchestration,
 )
 from .plotting import plot_forecast_zoom, plot_forecasts, plot_grid_sensitivity
@@ -167,6 +168,40 @@ def main() -> None:
         grid_limit=args.grid_limit,
     )
 
+    print("Logging individual orchestrator events (default and 1 kW stress case)...")
+    connected_evs = x_test["total_evs_connected"].to_numpy()
+    event_log_default = orchestrator_event_log(
+        pv_predictions,
+        ev_predictions,
+        y_pv_test.to_numpy(),
+        y_ev_test.to_numpy(),
+        connected_evs,
+        x_test.index,
+        grid_limit=args.grid_limit,
+    )
+    event_log_default.to_csv(
+        args.output_dir / f"orchestrator_events_{int(args.grid_limit)}w.csv",
+        index=False,
+    )
+    event_log_1kw = orchestrator_event_log(
+        pv_predictions,
+        ev_predictions,
+        y_pv_test.to_numpy(),
+        y_ev_test.to_numpy(),
+        connected_evs,
+        x_test.index,
+        grid_limit=1000.0,
+    )
+    event_log_1kw.to_csv(
+        args.output_dir / "orchestrator_events_1000w.csv", index=False
+    )
+    print(
+        f"{len(event_log_default)} events at {args.grid_limit:.0f} W "
+        f"({event_log_default['genuine_risk'].sum()} genuine), "
+        f"{len(event_log_1kw)} events at 1000 W "
+        f"({event_log_1kw['genuine_risk'].sum()} genuine)"
+    )
+
     print("Computing baselines (persistence, ridge regression)...")
     baselines = compute_baselines(
         x_test, y_pv_test, y_ev_test, x_train, y_pv_train, y_ev_train
@@ -290,6 +325,26 @@ def main() -> None:
         "xgboost_seed_stability": {"pv": xgb_pv_seeds, "ev": xgb_ev_seeds},
         "edge_decision": decision,
         "orchestration_stats": orchestration_stats,
+        "orchestrator_event_summary": {
+            f"{int(args.grid_limit)}w": {
+                "n_events": int(len(event_log_default)),
+                "n_genuine_risk": int(event_log_default["genuine_risk"].sum()),
+                "mean_reduction_per_ev_w": float(
+                    event_log_default["reduction_per_ev_w"].mean()
+                )
+                if len(event_log_default)
+                else 0.0,
+            },
+            "1000w": {
+                "n_events": int(len(event_log_1kw)),
+                "n_genuine_risk": int(event_log_1kw["genuine_risk"].sum()),
+                "mean_reduction_per_ev_w": float(
+                    event_log_1kw["reduction_per_ev_w"].mean()
+                )
+                if len(event_log_1kw)
+                else 0.0,
+            },
+        },
         "baselines": baselines,
         "ablation": ablation,
     }

@@ -94,6 +94,55 @@ def summarize_orchestration(
     }
 
 
+def orchestrator_event_log(
+    predicted_pv: np.ndarray,
+    predicted_ev: np.ndarray,
+    actual_pv: np.ndarray,
+    actual_ev: np.ndarray,
+    evs_connected: np.ndarray,
+    index: pd.DatetimeIndex,
+    grid_limit: float,
+) -> pd.DataFrame:
+    """Per-event detail for every interval where the deterministic rule throttles.
+
+    The aggregate throttle rate (summarize_orchestration) is too sparse at
+    realistic grid limits (Section VI-D) to say anything about control
+    quality -- whether throttle magnitudes are sensible, or whether the
+    controller is reacting to real supply/demand mismatches rather than
+    forecast noise. This logs every triggering interval individually,
+    including a "genuine_risk" flag computed from the *actual* (not
+    forecasted) PV/demand values, so each event can be checked rather than
+    only counted.
+    """
+    available_capacity = predicted_pv + grid_limit
+    deficit = np.maximum(0.0, predicted_ev - available_capacity)
+    connected = np.rint(evs_connected).astype(int)
+    throttle_mask = (deficit > 0) & (connected > 0)
+
+    actual_deficit = np.maximum(0.0, actual_ev - (actual_pv + grid_limit))
+
+    with np.errstate(divide="ignore", invalid="ignore"):
+        reduction_per_ev = np.where(
+            throttle_mask, deficit / np.maximum(connected, 1), 0.0
+        )
+
+    frame = pd.DataFrame(
+        {
+            "timestamp": index,
+            "evs_connected": connected,
+            "predicted_pv_w": predicted_pv,
+            "predicted_ev_w": predicted_ev,
+            "actual_pv_w": actual_pv,
+            "actual_ev_w": actual_ev,
+            "deficit_w": deficit,
+            "reduction_per_ev_w": reduction_per_ev,
+            "actual_deficit_w": actual_deficit,
+            "genuine_risk": actual_deficit > 0,
+        }
+    )
+    return frame[throttle_mask].reset_index(drop=True)
+
+
 def grid_limit_sensitivity(
     predicted_pv: np.ndarray,
     predicted_ev: np.ndarray,
