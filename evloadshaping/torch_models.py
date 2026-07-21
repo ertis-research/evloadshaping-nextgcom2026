@@ -47,11 +47,10 @@ from torch.utils.data import DataLoader, TensorDataset
 
 torch.set_num_threads(1)
 
-from .config import BASE_ONLY_FEATURE_COLUMNS
-from .models import evaluate_model
+from .config import BASE_ONLY_FEATURE_COLUMNS, SEEDS
+from .models import aggregate_seeds, evaluate_model
 
 SEQUENCE_WINDOW = 8  # 2 hours of 15-minute steps
-SEEDS = (42, 43, 44, 45, 46)  # each DL config is retrained per seed to report mean +/- std
 
 
 def _device() -> torch.device:
@@ -224,24 +223,6 @@ def _standardize_target(train: np.ndarray) -> tuple[float, float]:
     return mean, (std if std > 0 else 1.0)
 
 
-def _aggregate_seeds(per_seed_metrics: list[dict[str, float]]) -> dict[str, float]:
-    """Collapse a list of per-seed evaluate_model outputs into mean +/- std.
-
-    Reports mean under the original "mae"/"rmse" keys (so existing CSV/print
-    consumers keep working unchanged) plus "*_std" across SEEDS, since a
-    single-seed DL number is otherwise indistinguishable from run-to-run
-    training variance rather than a real effect.
-    """
-    maes = np.array([m["mae"] for m in per_seed_metrics])
-    rmses = np.array([m["rmse"] for m in per_seed_metrics])
-    return {
-        "mae": float(maes.mean()),
-        "mae_std": float(maes.std(ddof=1)),
-        "rmse": float(rmses.mean()),
-        "rmse_std": float(rmses.std(ddof=1)),
-    }
-
-
 def run_torch_comparison(
     x_train: pd.DataFrame,
     x_test: pd.DataFrame,
@@ -287,7 +268,7 @@ def run_torch_comparison(
                 preds_std = model(torch.from_numpy(x_test_s).to(device)).cpu().numpy()
             preds = preds_std * y_std + y_mean
             per_seed.append(evaluate_model(y_test, preds))
-        results.setdefault("mlp", {})[target_name] = _aggregate_seeds(per_seed)
+        results.setdefault("mlp", {})[target_name] = aggregate_seeds(per_seed)
 
     # --- LSTM / CNN on raw sequence windows of the base (non-lagged) channels ---
     channels = [c for c in BASE_ONLY_FEATURE_COLUMNS if c in x_train.columns]
@@ -328,7 +309,7 @@ def run_torch_comparison(
                     )
                 preds = preds_std * y_std + y_mean
                 per_seed.append(evaluate_model(target_test, preds))
-            results.setdefault(model_name, {})[target_name] = _aggregate_seeds(
+            results.setdefault(model_name, {})[target_name] = aggregate_seeds(
                 per_seed
             )
 
@@ -367,7 +348,7 @@ def run_torch_comparison(
                 )
             preds = preds_std * y_std + y_mean
             per_seed.append(evaluate_model(target_test, preds))
-        results.setdefault("lstm_features", {})[target_name] = _aggregate_seeds(
+        results.setdefault("lstm_features", {})[target_name] = aggregate_seeds(
             per_seed
         )
 

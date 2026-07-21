@@ -76,8 +76,8 @@ The pipeline writes the following files to `outputs/`:
 - `test_predictions.csv` — actual vs. predicted values for both targets on the held-out split.
 - `forecast_plot.png` — forecast trace over the full test horizon (each day is a sliver at this scale; useful as a coverage sanity check, not for reading forecast quality).
 - `forecast_plot_zoom.png` — the same traces over a two-week window chosen for typical (not spike) EV demand, readable at daily resolution.
-- `baseline_comparison.csv` — XGBoost vs. persistence vs. ridge regression, MAE/RMSE per target.
-- `baseline_comparison_with_torch.csv` — the above plus the PyTorch MLP/LSTM/CNN comparison and the engineered-feature LSTM variant, each as mean/std MAE and RMSE over 5 seeds (only written with `--include-torch`).
+- `baseline_comparison.csv` — XGBoost vs. persistence vs. ridge regression, MAE/RMSE per target. XGBoost's row is a mean/std over 5 seeds (its `subsample`/`colsample_bytree` < 1 make `random_state` a real variance source); persistence and ridge are deterministic solvers with no seed dependence.
+- `baseline_comparison_with_torch.csv` — the above plus the PyTorch MLP/LSTM/CNN comparison and the engineered-feature LSTM variant, each as mean/std MAE and RMSE over the same 5 seeds (only written with `--include-torch`).
 - `ablation_study.csv` — base (current-timestep only) vs. full engineered feature set.
 - `grid_sensitivity.csv`, `grid_sensitivity_plot.png` — throttle rate and mean per-EV reduction swept across safe grid limits.
 - `hourly_error_breakdown.csv` — forecast MAE bucketed by time of day.

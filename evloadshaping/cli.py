@@ -19,6 +19,7 @@ from .features import build_features, split_data
 from .models import (
     compute_baselines,
     evaluate_model,
+    evaluate_xgboost_seeds,
     run_feature_ablation,
     save_feature_importance,
     train_model,
@@ -102,6 +103,14 @@ def main() -> None:
     print(f"PV   MAE: {pv_metrics['mae']:.2f} W | RMSE: {pv_metrics['rmse']:.2f} W")
     print(f"EV   MAE: {ev_metrics['mae']:.2f} W | RMSE: {ev_metrics['rmse']:.2f} W")
 
+    print("Evaluating XGBoost stability across 5 seeds...")
+    xgb_pv_seeds = evaluate_xgboost_seeds(x_train, y_pv_train, x_test, y_pv_test)
+    xgb_ev_seeds = evaluate_xgboost_seeds(x_train, y_ev_train, x_test, y_ev_test)
+    print(
+        f"XGB   PV MAE: {xgb_pv_seeds['mae']:.2f} +/- {xgb_pv_seeds['mae_std']:.2f} W | "
+        f"EV MAE: {xgb_ev_seeds['mae']:.2f} +/- {xgb_ev_seeds['mae_std']:.2f} W"
+    )
+
     feature_names = [column for column in x_train.columns]
     model_pv.save_model(str(args.output_dir / "model_pv.json"))
     model_ev.save_model(str(args.output_dir / "model_ev.json"))
@@ -176,8 +185,8 @@ def main() -> None:
                 "target": "ev",
                 **baselines["ridge_regression"]["ev"],
             },
-            {"model": "xgboost", "target": "pv", **pv_metrics},
-            {"model": "xgboost", "target": "ev", **ev_metrics},
+            {"model": "xgboost", "target": "pv", **xgb_pv_seeds},
+            {"model": "xgboost", "target": "ev", **xgb_ev_seeds},
         ]
     ).to_csv(args.output_dir / "baseline_comparison.csv", index=False)
 
@@ -247,8 +256,8 @@ def main() -> None:
                 "target": "ev",
                 **baselines["ridge_regression"]["ev"],
             },
-            {"model": "xgboost", "target": "pv", **pv_metrics},
-            {"model": "xgboost", "target": "ev", **ev_metrics},
+            {"model": "xgboost", "target": "pv", **xgb_pv_seeds},
+            {"model": "xgboost", "target": "ev", **xgb_ev_seeds},
         ]
         for model_name in ("mlp", "lstm", "cnn", "lstm_features"):
             for target_name in ("pv", "ev"):
@@ -278,6 +287,7 @@ def main() -> None:
         "n_test": int(len(x_test)),
         "pv_metrics": pv_metrics,
         "ev_metrics": ev_metrics,
+        "xgboost_seed_stability": {"pv": xgb_pv_seeds, "ev": xgb_ev_seeds},
         "edge_decision": decision,
         "orchestration_stats": orchestration_stats,
         "baselines": baselines,

@@ -13,10 +13,12 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 
-from .config import BASE_ONLY_FEATURE_COLUMNS
+from .config import BASE_ONLY_FEATURE_COLUMNS, SEEDS
 
 
-def train_model(x_train: pd.DataFrame, y_train: pd.Series) -> xgb.XGBRegressor:
+def train_model(
+    x_train: pd.DataFrame, y_train: pd.Series, random_state: int = 42
+) -> xgb.XGBRegressor:
     model = xgb.XGBRegressor(
         n_estimators=250,
         max_depth=5,
@@ -24,7 +26,7 @@ def train_model(x_train: pd.DataFrame, y_train: pd.Series) -> xgb.XGBRegressor:
         subsample=0.9,
         colsample_bytree=0.9,
         tree_method="hist",
-        random_state=42,
+        random_state=random_state,
     )
     model.fit(x_train, y_train)
     return model
@@ -34,6 +36,45 @@ def evaluate_model(y_true: pd.Series, predictions: np.ndarray) -> dict[str, floa
     mae = mean_absolute_error(y_true, predictions)
     rmse = float(np.sqrt(mean_squared_error(y_true, predictions)))
     return {"mae": float(mae), "rmse": rmse}
+
+
+def aggregate_seeds(per_seed_metrics: list[dict[str, float]]) -> dict[str, float]:
+    """Collapse a list of per-seed evaluate_model outputs into mean +/- std.
+
+    Reports mean under the original "mae"/"rmse" keys (so existing CSV/print
+    consumers keep working unchanged) plus "*_std" across SEEDS, since a
+    single-seed number is otherwise indistinguishable from run-to-run
+    training variance rather than a real effect.
+    """
+    maes = np.array([m["mae"] for m in per_seed_metrics])
+    rmses = np.array([m["rmse"] for m in per_seed_metrics])
+    return {
+        "mae": float(maes.mean()),
+        "mae_std": float(maes.std(ddof=1)),
+        "rmse": float(rmses.mean()),
+        "rmse_std": float(rmses.std(ddof=1)),
+    }
+
+
+def evaluate_xgboost_seeds(
+    x_train: pd.DataFrame,
+    y_train: pd.Series,
+    x_test: pd.DataFrame,
+    y_test: pd.Series,
+    seeds: tuple[int, ...] = SEEDS,
+) -> dict[str, float]:
+    """Retrain XGBoost once per seed and report mean +/- std MAE/RMSE.
+
+    subsample=0.9 and colsample_bytree=0.9 make XGBoost's random_state
+    control real stochastic row/column sampling during training, not just an
+    arbitrary tie-break -- so, like the PyTorch comparison, a single seed's
+    result can't be told apart from ordinary training variance without this.
+    """
+    per_seed = []
+    for seed in seeds:
+        model = train_model(x_train, y_train, random_state=seed)
+        per_seed.append(evaluate_model(y_test, model.predict(x_test)))
+    return aggregate_seeds(per_seed)
 
 
 def compute_baselines(
