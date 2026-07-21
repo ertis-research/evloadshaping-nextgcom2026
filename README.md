@@ -10,9 +10,10 @@ This workspace contains a rapid research prototype for local forecasting and edg
   - trains the XGBoost forecasters and the persistence/ridge baselines ([models.py](evloadshaping/models.py)),
   - implements the deterministic edge load-shaping decision and its grid-limit sensitivity sweep ([orchestrator.py](evloadshaping/orchestrator.py)),
   - computes the temporal-error and per-charger-utilization breakdowns ([analysis.py](evloadshaping/analysis.py)),
-  - and plots the forecast traces and sensitivity curves ([plotting.py](evloadshaping/plotting.py)).
+  - plots the forecast traces and sensitivity curves ([plotting.py](evloadshaping/plotting.py)),
+  - and optionally trains a PyTorch MLP/LSTM/1-D CNN comparison against the same held-out split ([torch_models.py](evloadshaping/torch_models.py)) — a strictly optional add-on, never imported by default.
 - A thin CLI entry point in [pipeline.py](pipeline.py) (`evloadshaping/cli.py` underneath) that runs the full pipeline end to end and writes metrics, plots, and model artifacts to `outputs/`.
-- Three notebooks in [notebooks/](notebooks/) that walk through the same building blocks interactively — see below.
+- Four notebooks in [notebooks/](notebooks/) that walk through the same building blocks interactively — see below.
 - A minimal dependency list in [requirements.txt](requirements.txt).
 - A Docker image for local edge-style execution in [Dockerfile](Dockerfile).
 
@@ -37,13 +38,23 @@ For faster iteration, limit the rows during development:
 python pipeline.py --data-path data/20260514_uma_adabyron_data.csv --max-rows 50000
 ```
 
+To also run the PyTorch MLP/LSTM/CNN comparison against the same held-out split, install the extra dependency and pass `--include-torch`:
+
+```bash
+pip install -r requirements-torch.txt
+python pipeline.py --data-path data/20260514_uma_adabyron_data.csv --include-torch
+```
+
+This is never required for the default pipeline: `evloadshaping.torch_models` is only imported when `--include-torch` is passed, so a standard edge deployment does not need PyTorch installed.
+
 ## Notebooks
 
-[notebooks/](notebooks/) walks through the same pipeline interactively, split across three notebooks:
+[notebooks/](notebooks/) walks through the same pipeline interactively, split across four notebooks:
 
 1. [01_data_exploration.ipynb](notebooks/01_data_exploration.ipynb) — load the raw telemetry, resample it, and look at the PV/EV signals and their correlations before any modeling.
 2. [02_forecasting_and_baselines.ipynb](notebooks/02_forecasting_and_baselines.ipynb) — train the XGBoost forecasters, compare them against the persistence and ridge baselines, and inspect feature importance.
 3. [03_orchestrator_and_sensitivity.ipynb](notebooks/03_orchestrator_and_sensitivity.ipynb) — run the deterministic orchestrator, sweep the safe grid-limit parameter, and break down forecast error by time of day and by charger.
+4. [04_deep_learning_comparison.ipynb](notebooks/04_deep_learning_comparison.ipynb) — train the PyTorch MLP/LSTM/CNN comparison and compare it against all of the above (requires `requirements-torch.txt`).
 
 Each notebook is self-contained (it reloads and rebuilds whatever it needs), so they can be run independently and in any order. They import directly from the `evloadshaping` package rather than duplicating logic.
 
@@ -54,6 +65,8 @@ pip install -r requirements-notebooks.txt
 jupyter lab notebooks/
 ```
 
+Notebook 4 additionally needs PyTorch: `pip install -r requirements-torch.txt`.
+
 ## Outputs
 
 The pipeline writes the following files to `outputs/`:
@@ -61,8 +74,10 @@ The pipeline writes the following files to `outputs/`:
 - `model_pv.json`, `model_ev.json` — trained XGBoost models.
 - `feature_importance_pv.csv`, `feature_importance_ev.csv` — per-feature gain importances.
 - `test_predictions.csv` — actual vs. predicted values for both targets on the held-out split.
-- `forecast_plot.png` — forecast trace plot over the test horizon.
+- `forecast_plot.png` — forecast trace over the full test horizon (each day is a sliver at this scale; useful as a coverage sanity check, not for reading forecast quality).
+- `forecast_plot_zoom.png` — the same traces over a two-week window chosen for typical (not spike) EV demand, readable at daily resolution.
 - `baseline_comparison.csv` — XGBoost vs. persistence vs. ridge regression, MAE/RMSE per target.
+- `baseline_comparison_with_torch.csv` — the above plus the PyTorch MLP/LSTM/CNN comparison (only written with `--include-torch`).
 - `ablation_study.csv` — base (current-timestep only) vs. full engineered feature set.
 - `grid_sensitivity.csv`, `grid_sensitivity_plot.png` — throttle rate and mean per-EV reduction swept across safe grid limits.
 - `hourly_error_breakdown.csv` — forecast MAE bucketed by time of day.

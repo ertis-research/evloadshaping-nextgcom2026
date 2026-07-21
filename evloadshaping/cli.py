@@ -28,7 +28,7 @@ from .orchestrator import (
     grid_limit_sensitivity,
     summarize_orchestration,
 )
-from .plotting import plot_forecasts, plot_grid_sensitivity
+from .plotting import plot_forecast_zoom, plot_forecasts, plot_grid_sensitivity
 
 
 def parse_args() -> argparse.Namespace:
@@ -58,6 +58,16 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=None,
         help="Optional row limit for faster local experiments.",
+    )
+    parser.add_argument(
+        "--include-torch",
+        action="store_true",
+        help=(
+            "Also train and evaluate the PyTorch MLP/LSTM/CNN comparison "
+            "(evloadshaping.torch_models). Requires PyTorch "
+            "(pip install -r requirements-torch.txt); not needed for the "
+            "default edge pipeline."
+        ),
     )
     return parser.parse_args()
 
@@ -122,6 +132,16 @@ def main() -> None:
         output_path=args.output_dir / "forecast_plot.png",
     )
     plt.close(forecast_figure)
+
+    zoom_figure = plot_forecast_zoom(
+        test_index=x_test.index,
+        actual_pv=y_pv_test,
+        predicted_pv=pv_predictions,
+        actual_ev=y_ev_test,
+        predicted_ev=ev_predictions,
+        output_path=args.output_dir / "forecast_plot_zoom.png",
+    )
+    plt.close(zoom_figure)
 
     test_state = x_test.iloc[0]
     decision = edge_orchestrator(
@@ -206,6 +226,50 @@ def main() -> None:
     charger_stats = charger_utilization_stats(extended_frame, charger_ids)
     charger_stats.to_csv(args.output_dir / "charger_utilization.csv", index=False)
 
+    torch_results = None
+    if args.include_torch:
+        print("Training PyTorch MLP/LSTM/CNN comparison (this takes a while)...")
+        from .torch_models import run_torch_comparison  # lazy: torch is optional
+
+        torch_results = run_torch_comparison(
+            x_train, x_test, y_pv_train, y_pv_test, y_ev_train, y_ev_test
+        )
+        rows = [
+            {"model": "persistence", "target": "pv", **baselines["persistence"]["pv"]},
+            {"model": "persistence", "target": "ev", **baselines["persistence"]["ev"]},
+            {
+                "model": "ridge_regression",
+                "target": "pv",
+                **baselines["ridge_regression"]["pv"],
+            },
+            {
+                "model": "ridge_regression",
+                "target": "ev",
+                **baselines["ridge_regression"]["ev"],
+            },
+            {"model": "xgboost", "target": "pv", **pv_metrics},
+            {"model": "xgboost", "target": "ev", **ev_metrics},
+        ]
+        for model_name in ("mlp", "lstm", "cnn"):
+            for target_name in ("pv", "ev"):
+                rows.append(
+                    {
+                        "model": model_name,
+                        "target": target_name,
+                        **torch_results[model_name][target_name],
+                    }
+                )
+        pd.DataFrame(rows).to_csv(
+            args.output_dir / "baseline_comparison_with_torch.csv", index=False
+        )
+        for model_name in ("mlp", "lstm", "cnn"):
+            pv_m = torch_results[model_name]["pv"]
+            ev_m = torch_results[model_name]["ev"]
+            print(
+                f"{model_name.upper():5s} PV MAE: {pv_m['mae']:.2f} W | "
+                f"EV MAE: {ev_m['mae']:.2f} W"
+            )
+
     summary = {
         "data_path": str(args.data_path),
         "charger_ids": charger_ids,
@@ -218,6 +282,8 @@ def main() -> None:
         "baselines": baselines,
         "ablation": ablation,
     }
+    if torch_results is not None:
+        summary["torch_comparison"] = torch_results
     (args.output_dir / "summary.json").write_text(
         json.dumps(summary, indent=2), encoding="utf-8"
     )

@@ -21,26 +21,96 @@ def plot_forecasts(
     actual_ev: pd.Series,
     predicted_ev: np.ndarray,
     output_path: Path | None = None,
+    title_suffix: str = "",
 ) -> plt.Figure:
-    figure, axes = plt.subplots(2, 1, figsize=(14, 8), sharex=True)
+    """Plot actual vs. predicted traces for both targets.
 
-    axes[0].plot(test_index, actual_pv.values, label="Actual PV", linewidth=1.5)
-    axes[0].plot(test_index, predicted_pv, label="Predicted PV", linewidth=1.2)
+    Predicted is drawn dashed (not just a second color) so the two series stay
+    distinguishable if the figure is printed or reviewed in grayscale, and so
+    small tracking gaps are visible even where the lines nearly overlap. The
+    wide, short aspect ratio is intended for a double-column IEEE figure: it
+    reads well at full text width without the height ballooning to match.
+    """
+    figure, axes = plt.subplots(2, 1, figsize=(16, 6.5), sharex=True)
+    axes[0].set_xlim(test_index.min(), test_index.max())
+
+    axes[0].plot(test_index, actual_pv.values, label="Actual PV", linewidth=1.6)
+    axes[0].plot(
+        test_index, predicted_pv, label="Predicted PV", linewidth=1.3, linestyle="--"
+    )
     axes[0].set_ylabel("W")
-    axes[0].set_title("PV generation forecast")
+    axes[0].set_title(f"PV generation forecast{title_suffix}")
     axes[0].legend(loc="best")
+    axes[0].grid(alpha=0.3)
 
-    axes[1].plot(test_index, actual_ev.values, label="Actual EV demand", linewidth=1.5)
-    axes[1].plot(test_index, predicted_ev, label="Predicted EV demand", linewidth=1.2)
+    axes[1].plot(test_index, actual_ev.values, label="Actual EV demand", linewidth=1.6)
+    axes[1].plot(
+        test_index,
+        predicted_ev,
+        label="Predicted EV demand",
+        linewidth=1.3,
+        linestyle="--",
+    )
     axes[1].set_ylabel("W")
-    axes[1].set_title("EV charging demand forecast")
+    axes[1].set_title(f"EV charging demand forecast{title_suffix}")
     axes[1].legend(loc="best")
+    axes[1].grid(alpha=0.3)
 
     figure.autofmt_xdate()
     figure.tight_layout()
     if output_path is not None:
         figure.savefig(output_path, dpi=200)
     return figure
+
+
+def plot_forecast_zoom(
+    test_index: pd.Index,
+    actual_pv: pd.Series,
+    predicted_pv: np.ndarray,
+    actual_ev: pd.Series,
+    predicted_ev: np.ndarray,
+    output_path: Path | None = None,
+    window_days: int = 14,
+) -> plt.Figure:
+    """Plot a short, readable window representative of routine operation.
+
+    The full test horizon (months of 15-minute samples) compresses each day to
+    a sliver and makes actual/predicted visually indistinguishable, so a short
+    window is needed for a readable figure. Centering that window on the
+    single largest demand spike would overstate worst-case error and is not
+    representative of day-to-day operation, so instead this selects the
+    contiguous ``window_days``-day span whose peak daily EV demand is closest
+    to the median peak across all such spans in the test horizon, a typical
+    period rather than an outlier event. The window is computed from the data
+    (not a hard-coded date range), so this generalizes to any dataset/test
+    split.
+    """
+    predicted_ev = np.asarray(predicted_ev)
+    predicted_pv = np.asarray(predicted_pv)
+
+    daily_peak = pd.Series(actual_ev.to_numpy(), index=test_index).resample("1D").max()
+    rolling_peak = daily_peak.rolling(window=window_days, min_periods=window_days).max()
+    rolling_peak = rolling_peak.dropna()
+    typical_peak = daily_peak.median()
+    representative_end_day = (rolling_peak - typical_peak).abs().idxmin()
+
+    window_end = min(test_index.max(), representative_end_day + pd.Timedelta(days=1))
+    window_start = max(test_index.min(), window_end - pd.Timedelta(days=window_days))
+
+    mask = (test_index >= window_start) & (test_index < window_end)
+
+    return plot_forecasts(
+        test_index[mask],
+        actual_pv[mask],
+        predicted_pv[mask],
+        actual_ev[mask],
+        predicted_ev[mask],
+        output_path=output_path,
+        title_suffix=(
+            f" ({window_start:%Y-%m-%d} to "
+            f"{(window_end - pd.Timedelta(days=1)):%Y-%m-%d})"
+        ),
+    )
 
 
 def plot_grid_sensitivity(
