@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import time
 
 import matplotlib
 
@@ -17,6 +18,7 @@ from .analysis import charger_utilization_stats, hourly_error_breakdown
 from .data import load_extended_raw, load_raw_data
 from .features import build_features, split_data
 from .models import (
+    benchmark_inference_latency,
     compute_baselines,
     evaluate_model,
     evaluate_xgboost_seeds,
@@ -81,6 +83,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
+    run_start = time.perf_counter()
     args = parse_args()
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -109,6 +112,13 @@ def main() -> None:
     print("Evaluation metrics")
     print(f"PV   MAE: {pv_metrics['mae']:.2f} W | RMSE: {pv_metrics['rmse']:.2f} W")
     print(f"EV   MAE: {ev_metrics['mae']:.2f} W | RMSE: {ev_metrics['rmse']:.2f} W")
+
+    print("Benchmarking single-sample inference latency (both targets)...")
+    latency = benchmark_inference_latency(model_pv, model_ev, x_test)
+    print(
+        f"Inference latency: {latency['mean_ms']:.2f} +/- {latency['std_ms']:.2f} ms "
+        f"(mean over {latency['n_samples']} samples)"
+    )
 
     print("Evaluating XGBoost stability across 5 seeds...")
     xgb_pv_seeds = evaluate_xgboost_seeds(x_train, y_pv_train, x_test, y_pv_test)
@@ -320,6 +330,12 @@ def main() -> None:
     charger_stats = charger_utilization_stats(extended_frame, charger_ids)
     charger_stats.to_csv(args.output_dir / "charger_utilization.csv", index=False)
 
+    # End of the "full pipeline" the paper's Implementation section describes
+    # (CSV ingestion through charger utilization) -- excludes the optional
+    # --include-torch block below, which is separately slow by design.
+    full_run_seconds = time.perf_counter() - run_start
+    print(f"Full pipeline run completed in {full_run_seconds:.1f}s (includes training)")
+
     torch_results = None
     if args.include_torch:
         print("Training PyTorch MLP/LSTM/CNN comparison (this takes a while)...")
@@ -395,6 +411,8 @@ def main() -> None:
                 else 0.0,
             },
         },
+        "inference_latency_ms": latency,
+        "full_pipeline_run_seconds": full_run_seconds,
         "baselines": baselines,
         "bootstrap_significance": {"pv": bootstrap_pv, "ev": bootstrap_ev},
         "persistence_orchestration_stats": persistence_orchestration_stats,

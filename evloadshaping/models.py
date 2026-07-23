@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 import warnings
 from pathlib import Path
 
@@ -176,3 +177,39 @@ def save_feature_importance(
         }
     ).sort_values("importance", ascending=False)
     importance.to_csv(output_path, index=False)
+
+
+def benchmark_inference_latency(
+    model_pv: xgb.XGBRegressor,
+    model_ev: xgb.XGBRegressor,
+    x_test: pd.DataFrame,
+    n_samples: int = 500,
+) -> dict[str, float]:
+    """Time single-sample inference for both targets, the recurring edge workload.
+
+    Training happens once; the deployed edge service only ever calls
+    predict() on one fresh 15-minute sample at a time. Times n_samples
+    individual (pv, ev) prediction pairs -- not a batch predict, which would
+    understate the per-interval latency a real deployment actually sees --
+    and reports the mean. This is the only place this number is measured:
+    the paper's implementation-details latency claim previously existed only
+    as prose, recomputed by hand and never checked into the repository it
+    points readers to.
+    """
+    n_samples = min(n_samples, len(x_test))
+    rows = x_test.iloc[:n_samples]
+
+    latencies_ms = []
+    for i in range(n_samples):
+        row = rows.iloc[[i]]
+        t0 = time.perf_counter()
+        model_pv.predict(row)
+        model_ev.predict(row)
+        latencies_ms.append((time.perf_counter() - t0) * 1000)
+
+    latencies_ms = np.array(latencies_ms)
+    return {
+        "mean_ms": float(latencies_ms.mean()),
+        "std_ms": float(latencies_ms.std(ddof=1)),
+        "n_samples": n_samples,
+    }
