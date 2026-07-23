@@ -25,6 +25,7 @@ def block_bootstrap_mae_diff(
     confidence: float = 0.95,
     random_state: int = 42,
     chunk_size: int = 1_000,
+    return_distribution: bool = False,
 ) -> dict[str, float | bool | int]:
     """Moving block bootstrap CI for MAE(a) - MAE(b) on the same held-out split.
 
@@ -58,7 +59,7 @@ def block_bootstrap_mae_diff(
     lower, upper = np.percentile(
         resample_means, [100 * alpha / 2, 100 * (1 - alpha / 2)]
     )
-    return {
+    result: dict[str, float | bool | int | np.ndarray] = {
         "point_estimate_w": float(diff.mean()),
         "ci_lower_w": float(lower),
         "ci_upper_w": float(upper),
@@ -67,3 +68,9 @@ def block_bootstrap_mae_diff(
         "n_resamples": n_resamples,
         "significant": bool(lower > 0 or upper < 0),
     }
+    if return_distribution:
+        # Opt-in only: cli.py doesn't pass this, so bootstrap_significance.csv
+        # is unaffected. Exists for presentation figures that plot the actual
+        # resampled distribution rather than just its summary CI.
+        result["resample_means"] = resample_means
+    return result
