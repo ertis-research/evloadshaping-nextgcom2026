@@ -20,6 +20,7 @@ from .models import (
     compute_baselines,
     evaluate_model,
     evaluate_xgboost_seeds,
+    persistence_predictions,
     run_feature_ablation,
     save_feature_importance,
     train_model,
@@ -27,10 +28,12 @@ from .models import (
 from .orchestrator import (
     edge_orchestrator,
     grid_limit_sensitivity,
+    orchestrator_agreement,
     orchestrator_event_log,
     summarize_orchestration,
 )
 from .plotting import plot_forecast_zoom, plot_forecasts, plot_grid_sensitivity
+from .significance import block_bootstrap_mae_diff
 
 
 def parse_args() -> argparse.Namespace:
@@ -225,6 +228,50 @@ def main() -> None:
         ]
     ).to_csv(args.output_dir / "baseline_comparison.csv", index=False)
 
+    print("Block bootstrap: is XGBoost's edge over persistence statistically robust?")
+    persistence_pv, persistence_ev = persistence_predictions(x_test)
+    bootstrap_pv = block_bootstrap_mae_diff(
+        y_pv_test.to_numpy(), pv_predictions, persistence_pv
+    )
+    bootstrap_ev = block_bootstrap_mae_diff(
+        y_ev_test.to_numpy(), ev_predictions, persistence_ev
+    )
+    print(
+        f"PV  XGBoost - persistence MAE: {bootstrap_pv['point_estimate_w']:+.2f} W, "
+        f"95% CI [{bootstrap_pv['ci_lower_w']:.1f}, {bootstrap_pv['ci_upper_w']:.1f}] "
+        f"({'significant' if bootstrap_pv['significant'] else 'not significant'})"
+    )
+    print(
+        f"EV  XGBoost - persistence MAE: {bootstrap_ev['point_estimate_w']:+.2f} W, "
+        f"95% CI [{bootstrap_ev['ci_lower_w']:.1f}, {bootstrap_ev['ci_upper_w']:.1f}] "
+        f"({'significant' if bootstrap_ev['significant'] else 'not significant'})"
+    )
+    pd.DataFrame(
+        [
+            {"target": "pv", **bootstrap_pv},
+            {"target": "ev", **bootstrap_ev},
+        ]
+    ).to_csv(args.output_dir / "bootstrap_significance.csv", index=False)
+
+    print("Orchestrator counterfactual: XGBoost forecasts vs. persistence forecasts...")
+    persistence_orchestration_stats = summarize_orchestration(
+        persistence_pv, persistence_ev, connected_evs, grid_limit=args.grid_limit
+    )
+    agreement = orchestrator_agreement(
+        pv_predictions,
+        ev_predictions,
+        persistence_pv,
+        persistence_ev,
+        connected_evs,
+        grid_limit=args.grid_limit,
+    )
+    print(
+        f"Persistence throttles {persistence_orchestration_stats['n_throttle']}/"
+        f"{persistence_orchestration_stats['n_intervals']} intervals "
+        f"(mean reduction {persistence_orchestration_stats['mean_reduction_per_ev_w']:.2f} W/EV), "
+        f"agreeing with XGBoost's decision in {agreement['agreement_rate'] * 100:.2f}% of intervals"
+    )
+
     print("Running feature ablation (base features vs. full feature set)...")
     ablation = run_feature_ablation(
         x_train, x_test, y_pv_train, y_pv_test, y_ev_train, y_ev_test
@@ -346,6 +393,9 @@ def main() -> None:
             },
         },
         "baselines": baselines,
+        "bootstrap_significance": {"pv": bootstrap_pv, "ev": bootstrap_ev},
+        "persistence_orchestration_stats": persistence_orchestration_stats,
+        "orchestrator_agreement_vs_persistence": agreement,
         "ablation": ablation,
     }
     if torch_results is not None:
