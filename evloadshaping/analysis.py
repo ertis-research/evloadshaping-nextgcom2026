@@ -12,13 +12,17 @@ def hourly_error_breakdown(
     pv_predictions: np.ndarray,
     y_ev_test: pd.Series,
     ev_predictions: np.ndarray,
-    bucket_hours: int = 3,
+    bucket_hours: int = 6,
 ) -> pd.DataFrame:
     """Bucket absolute forecast error by time of day.
 
     Short-horizon PV error is expected to concentrate around sunrise/sunset
     transitions; this table lets the discussion make that claim with numbers
-    instead of asserting it from the trace plot alone.
+    instead of asserting it from the trace plot alone. Defaults to 6-hour
+    buckets to match the paper's Table VI (00-06/06-12/12-18/18-00); the
+    default had drifted to 3h at some point while the paper's own table
+    stayed at 6h, so the CLI/notebook output no longer matched what's
+    published until this was caught and fixed.
     """
     hours = test_index.hour
     bucket = (hours // bucket_hours) * bucket_hours
