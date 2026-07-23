@@ -1,0 +1,26 @@
+[project]
+name = "evloadshaping"
+version = "0.1.0"
+description = "Edge-driven load shaping for EV charging under battery-less microgrid constraints"
+readme = "README.md"
+requires-python = ">=3.10,<3.13"
+dependencies = [
+    "pandas>=2.3,<3",
+    "numpy>=2.0,<3",
+    "xgboost>=3.0,<4",
+    "scikit-learn>=1.6,<2",
+    "matplotlib>=3.9,<4",
+]
+
+[project.optional-dependencies]
+notebooks = [
+    "jupyter>=1.0,<2",
+    "ipykernel>=6.31,<7",
+    "nbformat>=5.10,<6",
+]
+torch = [
+    "torch>=2.8,<3",
+]
+
+[tool.uv]
+package = false
