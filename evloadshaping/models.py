@@ -13,7 +13,7 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 
-from .config import BASE_ONLY_FEATURE_COLUMNS, SEEDS
+from .config import BASE_ONLY_FEATURE_COLUMNS, EV_DEMAND_COLUMN, PV_COLUMN, SEEDS
 
 
 def train_model(
@@ -77,6 +77,19 @@ def evaluate_xgboost_seeds(
     return aggregate_seeds(per_seed)
 
 
+def persistence_predictions(x_test: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
+    """The naive t+1 forecast: carry forward the current-timestep observation.
+
+    Shared by the baseline comparison and by the orchestrator counterfactual
+    (Section VI-C), which reruns the edge decision on persistence forecasts
+    to quantify what XGBoost actually buys the control loop.
+    """
+    return (
+        x_test[PV_COLUMN].to_numpy(),
+        x_test[EV_DEMAND_COLUMN].to_numpy(),
+    )
+
+
 def compute_baselines(
     x_test: pd.DataFrame,
     y_pv_test: pd.Series,
@@ -93,8 +106,7 @@ def compute_baselines(
     much of the accuracy comes from a non-linear model versus the features
     themselves.
     """
-    persistence_pv = x_test["uma_adabyron_solarpanels_pvGeneration"].to_numpy()
-    persistence_ev = x_test["total_ev_power_demand"].to_numpy()
+    persistence_pv, persistence_ev = persistence_predictions(x_test)
 
     # Ridge on standardized features rather than plain OLS: the engineered
     # feature set has near-collinear columns (cyclical time pairs, lag/rolling

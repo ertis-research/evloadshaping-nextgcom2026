@@ -5,6 +5,8 @@ from __future__ import annotations
 import re
 
 TIME_COLUMN = "_time"
+PV_COLUMN = "uma_adabyron_solarpanels_pvGeneration"
+EV_DEMAND_COLUMN = "total_ev_power_demand"
 
 # Shared across XGBoost and PyTorch stability checks: each model type is
 # retrained once per seed and reported as mean +/- std, since a single-seed
@@ -15,7 +17,7 @@ BASE_WEATHER_COLUMNS = [
     "uma_adabyron_weatherStation_temperature",
     "uma_adabyron_weatherStation_relativeHumidity",
     "uma_adabyron_weatherStation_windSpeed",
-    "uma_adabyron_solarpanels_pvGeneration",
+    PV_COLUMN,
 ]
 CHARGER_POWER_PATTERN = re.compile(r"^uma_adabyron_EVCharger-(\d+)_real_power_sum$")
 CHARGER_CONNECTED_PATTERN = re.compile(
@@ -30,8 +32,8 @@ BASE_ONLY_FEATURE_COLUMNS = [
     "uma_adabyron_weatherStation_temperature",
     "uma_adabyron_weatherStation_relativeHumidity",
     "uma_adabyron_weatherStation_windSpeed",
-    "uma_adabyron_solarpanels_pvGeneration",
-    "total_ev_power_demand",
+    PV_COLUMN,
+    EV_DEMAND_COLUMN,
     "total_evs_connected",
     "hour_sin",
     "hour_cos",
