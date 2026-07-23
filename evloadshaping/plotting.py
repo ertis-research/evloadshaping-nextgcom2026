@@ -89,6 +89,10 @@ def plot_forecast_zoom(
     predicted_pv = np.asarray(predicted_pv)
 
     daily_peak = pd.Series(actual_ev.to_numpy(), index=test_index).resample("1D").max()
+    # Clamp to the available span so a short test split (e.g. from --max-rows
+    # during local development) degrades to "the whole available span"
+    # instead of an empty rolling window and a crash in idxmin() below.
+    window_days = max(1, min(window_days, len(daily_peak)))
     rolling_peak = daily_peak.rolling(window=window_days, min_periods=window_days).max()
     rolling_peak = rolling_peak.dropna()
     typical_peak = daily_peak.median()

@@ -62,7 +62,6 @@ def load_raw_data(
     frame = pd.read_csv(
         data_path,
         usecols=usecols,
-        nrows=max_rows,
         low_memory=False,
     )
     # The raw timestamps mix formats (some rows carry fractional seconds) and
@@ -72,6 +71,13 @@ def load_raw_data(
         frame[TIME_COLUMN], utc=True, format="mixed"
     ).dt.tz_localize(None)
     frame = frame.sort_values(TIME_COLUMN).set_index(TIME_COLUMN)
+    if max_rows is not None:
+        # Take the most recent max_rows samples, not the first max_rows: on
+        # this site's telemetry, the earliest rows predate PV/charger
+        # installation (100% NaN on those columns), so a naive head slice
+        # gets entirely dropped by build_features's dropna() and crashes
+        # downstream with zero training rows.
+        frame = frame.tail(max_rows)
     return frame, charger_ids
 
 

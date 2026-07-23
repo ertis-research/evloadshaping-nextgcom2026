@@ -62,7 +62,10 @@ def parse_args() -> argparse.Namespace:
         "--max-rows",
         type=int,
         default=None,
-        help="Optional row limit for faster local experiments.",
+        help=(
+            "Optional limit on how many of the most recent raw rows to load, "
+            "for faster local experiments."
+        ),
     )
     parser.add_argument(
         "--include-torch",
