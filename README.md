@@ -70,6 +70,27 @@ uv run python pipeline.py --data-path data/20260514_uma_adabyron_data.csv --incl
 
 This is never required for the default pipeline: `evloadshaping.torch_models` is only imported when `--include-torch` is passed, so a standard edge deployment does not need PyTorch installed.
 
+## Live demo
+
+For presentations: [live_demo.py](live_demo.py) (`evloadshaping/live_demo.py`
+underneath) loads the already-trained models from a prior `pipeline.py` run
+and replays a short window of the held-out test split one interval at a
+time, single-sample inference (not a batch predict), timed and printed live
+with a short pause between intervals so it reads as a real-time stream on
+camera. By default it auto-selects a window centered on the largest genuine
+throttle event, the same data-driven-window principle `plot_forecast_zoom`
+uses, so it doesn't need a hand-picked date:
+
+```bash
+uv run python pipeline.py --data-path data/20260514_uma_adabyron_data.csv  # once, to produce outputs/model_*.json
+uv run python live_demo.py
+```
+
+Useful flags: `--grid-limit` (default 1000 W, the stress case with more
+events to show), `--window-intervals` (how many 15-minute steps to replay),
+`--delay` (seconds between intervals, for pacing on camera), `--start` (an
+explicit index into the test split instead of auto-selection).
+
 ## Outputs
 
 The pipeline writes the following files to `outputs/`:
