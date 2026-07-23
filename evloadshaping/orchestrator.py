@@ -49,6 +49,21 @@ def edge_orchestrator(
     }
 
 
+def _throttle_decision(
+    predicted_pv: np.ndarray,
+    predicted_ev: np.ndarray,
+    evs_connected: np.ndarray,
+    grid_limit: float,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Shared core of the deterministic rule: deficit and throttle/inspect masks."""
+    available_capacity = predicted_pv + grid_limit
+    deficit = np.maximum(0.0, predicted_ev - available_capacity)
+    connected = np.rint(evs_connected).astype(int)
+    throttle_mask = (deficit > 0) & (connected > 0)
+    inspect_mask = (deficit > 0) & (connected <= 0)
+    return deficit, throttle_mask, inspect_mask
+
+
 def summarize_orchestration(
     predicted_pv: np.ndarray,
     predicted_ev: np.ndarray,
@@ -61,12 +76,10 @@ def summarize_orchestration(
     so the paper can report how often a throttle command would fire instead of
     relying on a single, possibly unrepresentative, snapshot.
     """
-    available_capacity = predicted_pv + grid_limit
-    deficit = np.maximum(0.0, predicted_ev - available_capacity)
-
+    deficit, throttle_mask, inspect_mask = _throttle_decision(
+        predicted_pv, predicted_ev, evs_connected, grid_limit
+    )
     connected = np.rint(evs_connected).astype(int)
-    throttle_mask = (deficit > 0) & (connected > 0)
-    inspect_mask = (deficit > 0) & (connected <= 0)
 
     n_total = int(len(predicted_pv))
     n_throttle = int(throttle_mask.sum())
@@ -114,10 +127,10 @@ def orchestrator_event_log(
     forecasted) PV/demand values, so each event can be checked rather than
     only counted.
     """
-    available_capacity = predicted_pv + grid_limit
-    deficit = np.maximum(0.0, predicted_ev - available_capacity)
+    deficit, throttle_mask, _ = _throttle_decision(
+        predicted_pv, predicted_ev, evs_connected, grid_limit
+    )
     connected = np.rint(evs_connected).astype(int)
-    throttle_mask = (deficit > 0) & (connected > 0)
 
     actual_deficit = np.maximum(0.0, actual_ev - (actual_pv + grid_limit))
 
@@ -141,6 +154,34 @@ def orchestrator_event_log(
         }
     )
     return frame[throttle_mask].reset_index(drop=True)
+
+
+def orchestrator_agreement(
+    predicted_pv_a: np.ndarray,
+    predicted_ev_a: np.ndarray,
+    predicted_pv_b: np.ndarray,
+    predicted_ev_b: np.ndarray,
+    evs_connected: np.ndarray,
+    grid_limit: float,
+) -> dict[str, float | int]:
+    """Compare the orchestrator's binary throttle decision under two forecast sources.
+
+    Section VI-C reruns the orchestrator on persistence forecasts to quantify
+    what a more accurate forecaster (XGBoost) actually buys the control loop:
+    forecast-accuracy differences that don't flip the throttle/no-throttle
+    decision don't change the deployed system's behavior.
+    """
+    _, throttle_a, _ = _throttle_decision(
+        predicted_pv_a, predicted_ev_a, evs_connected, grid_limit
+    )
+    _, throttle_b, _ = _throttle_decision(
+        predicted_pv_b, predicted_ev_b, evs_connected, grid_limit
+    )
+    return {
+        "n_intervals": int(len(throttle_a)),
+        "agreement_rate": float((throttle_a == throttle_b).mean()),
+        "n_disagreements": int((throttle_a != throttle_b).sum()),
+    }
 
 
 def grid_limit_sensitivity(
