@@ -109,12 +109,13 @@ def compute_baselines(
     """
     persistence_pv, persistence_ev = persistence_predictions(x_test)
 
-    # Ridge on standardized features rather than plain OLS: the engineered
-    # feature set has near-collinear columns (cyclical time pairs, lag/rolling
-    # variants of the same signal). This drives the SVD-based ridge solver's
-    # near-zero singular values, which numpy flags as RuntimeWarnings even
-    # though they resolve to finite coefficients (verified against 5 solvers,
-    # none producing NaN/Inf in coefficients or predictions) — safe to ignore.
+    # Ridge on standardized features rather than plain OLS, because the
+    # engineered feature set has near-collinear columns (cyclical time pairs,
+    # lag/rolling variants of the same signal). This drives the SVD-based ridge
+    # solver's near-zero singular values, which numpy flags as RuntimeWarnings
+    # even though they resolve to finite coefficients (verified against 5
+    # solvers, none producing NaN/Inf in coefficients or predictions), so the
+    # warnings are safe to ignore.
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", category=RuntimeWarning)
         linreg_pv = make_pipeline(StandardScaler(), Ridge(alpha=1.0)).fit(
