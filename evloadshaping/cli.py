@@ -282,7 +282,10 @@ def main() -> None:
         f"Persistence throttles {persistence_orchestration_stats['n_throttle']}/"
         f"{persistence_orchestration_stats['n_intervals']} intervals "
         f"(mean reduction {persistence_orchestration_stats['mean_reduction_per_ev_w']:.2f} W/EV), "
-        f"agreeing with XGBoost's decision in {agreement['agreement_rate'] * 100:.2f}% of intervals"
+        f"agreeing with XGBoost's decision in {agreement['agreement_rate'] * 100:.2f}% of intervals "
+        f"(Cohen's kappa {agreement['cohens_kappa']:.3f}; "
+        f"{agreement['n_throttle_both']}/{agreement['n_intervals_either_throttles']} "
+        f"agreement among intervals where either throttles)"
     )
 
     print("Running feature ablation (base features vs. full feature set)...")

@@ -170,6 +170,13 @@ def orchestrator_agreement(
     what a more accurate forecaster (XGBoost) actually buys the control loop:
     forecast-accuracy differences that don't flip the throttle/no-throttle
     decision don't change the deployed system's behavior.
+
+    The raw agreement rate is dominated by the intervals where neither
+    forecaster throttles, which is nearly all of them, so it overstates how
+    much the two controllers really behave alike. We therefore also report
+    Cohen's kappa (chance-corrected against the two throttle base rates) and
+    the agreement restricted to intervals where at least one controller acts.
+    Both are what a reader should judge the counterfactual on.
     """
     _, throttle_a, _ = _throttle_decision(
         predicted_pv_a, predicted_ev_a, evs_connected, grid_limit
@@ -177,10 +184,34 @@ def orchestrator_agreement(
     _, throttle_b, _ = _throttle_decision(
         predicted_pv_b, predicted_ev_b, evs_connected, grid_limit
     )
+
+    n = int(len(throttle_a))
+    both = int((throttle_a & throttle_b).sum())
+    only_a = int((throttle_a & ~throttle_b).sum())
+    only_b = int((~throttle_a & throttle_b).sum())
+    neither = n - both - only_a - only_b
+
+    observed = (both + neither) / n
+    rate_a = (both + only_a) / n
+    rate_b = (both + only_b) / n
+    expected = rate_a * rate_b + (1.0 - rate_a) * (1.0 - rate_b)
+    # kappa is undefined when both controllers act on every interval or on
+    # none; at any realistic grid limit neither degenerate case occurs.
+    kappa = (observed - expected) / (1.0 - expected) if expected < 1.0 else float("nan")
+
+    n_either = both + only_a + only_b
     return {
-        "n_intervals": int(len(throttle_a)),
-        "agreement_rate": float((throttle_a == throttle_b).mean()),
-        "n_disagreements": int((throttle_a != throttle_b).sum()),
+        "n_intervals": n,
+        "agreement_rate": float(observed),
+        "n_disagreements": int(only_a + only_b),
+        "n_throttle_both": both,
+        "n_throttle_only_a": only_a,
+        "n_throttle_only_b": only_b,
+        "cohens_kappa": float(kappa),
+        "n_intervals_either_throttles": n_either,
+        "agreement_rate_when_either_throttles": float(both / n_either)
+        if n_either
+        else float("nan"),
     }
 
 
