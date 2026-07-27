@@ -15,6 +15,21 @@ def edge_orchestrator(
     grid_limit: float,
 ) -> dict[str, float | int | str]:
     available_capacity = predicted_pv + grid_limit
+    deficit = predicted_ev - available_capacity
+
+    # Branch order mirrors _throttle_decision: a deficit is what makes the
+    # interval interesting, and only then does the connected count decide
+    # between a throttle command and a sensor-integrity check.
+    if deficit <= 0:
+        return {
+            "status": "stable",
+            "message": "Grid stable. Normal charging operations permitted.",
+            "predicted_pv": predicted_pv,
+            "predicted_ev": predicted_ev,
+            "current_evs_connected": current_evs_connected,
+            "grid_limit": grid_limit,
+        }
+
     if current_evs_connected <= 0:
         return {
             "status": "inspect",
@@ -25,17 +40,6 @@ def edge_orchestrator(
             "grid_limit": grid_limit,
         }
 
-    if predicted_ev <= available_capacity:
-        return {
-            "status": "stable",
-            "message": "Grid stable. Normal charging operations permitted.",
-            "predicted_pv": predicted_pv,
-            "predicted_ev": predicted_ev,
-            "current_evs_connected": current_evs_connected,
-            "grid_limit": grid_limit,
-        }
-
-    deficit = predicted_ev - available_capacity
     reduction_per_ev = deficit / current_evs_connected
     return {
         "status": "throttle",
