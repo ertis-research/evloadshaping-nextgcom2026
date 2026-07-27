@@ -3,7 +3,7 @@ message: "If you use this software, please cite the accompanying paper."
 title: "evloadshaping: Edge-Driven Load Shaping for EV Charging Under Battery-Less Microgrid Constraints"
 type: software
 license: MIT
-repository-code: "https://github.com/ertis-research/NextGCom2026_EVChargersPaper"
+repository-code: "https://github.com/ertis-research/evloadshaping-nextgcom2026"
 authors:
   - family-names: Chaves
     given-names: "Antonio Jesús"
