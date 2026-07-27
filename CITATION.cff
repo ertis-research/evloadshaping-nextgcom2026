@@ -1,5 +1,5 @@
 cff-version: 1.2.0
-message: "If you use this software, please cite the accompanying paper."
+message: "If you use this software, please cite it as below."
 title: "evloadshaping: Edge-Driven Load Shaping for EV Charging Under Battery-Less Microgrid Constraints"
 type: software
 license: MIT
@@ -14,21 +14,27 @@ authors:
   - family-names: Díaz
     given-names: Manuel
     affiliation: "ITIS Software, University of Málaga"
-preferred-citation:
-  type: conference-paper
-  title: "Edge-Driven Load Shaping for EV Charging Under Battery-Less Microgrid Constraints"
-  authors:
-    - family-names: Chaves
-      given-names: "Antonio Jesús"
-      affiliation: "ITIS Software, University of Málaga"
-    - family-names: Martín
-      given-names: Cristian
-      affiliation: "ITIS Software, University of Málaga"
-    - family-names: Díaz
-      given-names: Manuel
-      affiliation: "ITIS Software, University of Málaga"
-  year: 2026
-  conference:
-    name: "IEEE NextGCom 2026, EVOLVE Special Session"
-    city: Argostoli
-    country: GR
+# The accompanying paper is still under review. GitHub turns preferred-citation
+# into a ready-to-paste citation with no mention of review status, so the block
+# below stays commented out until the NextGCom 2026 EVOLVE special session
+# confirms acceptance. On acceptance, uncomment it and fill in the volume,
+# pages, and DOI from the published proceedings.
+#
+# preferred-citation:
+#   type: conference-paper
+#   title: "Edge-Driven Load Shaping for EV Charging Under Battery-Less Microgrid Constraints"
+#   authors:
+#     - family-names: Chaves
+#       given-names: "Antonio Jesús"
+#       affiliation: "ITIS Software, University of Málaga"
+#     - family-names: Martín
+#       given-names: Cristian
+#       affiliation: "ITIS Software, University of Málaga"
+#     - family-names: Díaz
+#       given-names: Manuel
+#       affiliation: "ITIS Software, University of Málaga"
+#   year: 2026
+#   conference:
+#     name: "IEEE NextGCom 2026, EVOLVE Special Session"
+#     city: Argostoli
+#     country: GR
