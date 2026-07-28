@@ -13,6 +13,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
+from .analysis import select_representative_window
+
 
 def plot_forecasts(
     test_index: pd.Index,
@@ -78,29 +80,18 @@ def plot_forecast_zoom(
     a sliver and makes actual/predicted visually indistinguishable, so a short
     window is needed for a readable figure. Centering that window on the
     single largest demand spike would overstate worst-case error and is not
-    representative of day-to-day operation, so instead this selects the
-    contiguous ``window_days``-day span whose peak daily EV demand is closest
-    to the median peak across all such spans in the test horizon, a typical
-    period rather than an outlier event. The window is computed from the data
-    (not a hard-coded date range), so this generalizes to any dataset/test
-    split.
+    representative of day-to-day operation, so instead this plots the window
+    chosen by analysis.select_representative_window: a typical period rather
+    than an outlier event, computed from the data rather than a hard-coded
+    date range. The selection lives in analysis so that the window errors the
+    paper quotes are measured on exactly the window plotted here.
     """
     predicted_ev = np.asarray(predicted_ev)
     predicted_pv = np.asarray(predicted_pv)
 
-    daily_peak = pd.Series(actual_ev.to_numpy(), index=test_index).resample("1D").max()
-    # Clamp to the available span so a short test split (e.g. from --max-rows
-    # during local development) degrades to "the whole available span"
-    # instead of an empty rolling window and a crash in idxmin() below.
-    window_days = max(1, min(window_days, len(daily_peak)))
-    rolling_peak = daily_peak.rolling(window=window_days, min_periods=window_days).max()
-    rolling_peak = rolling_peak.dropna()
-    typical_peak = daily_peak.median()
-    representative_end_day = (rolling_peak - typical_peak).abs().idxmin()
-
-    window_end = min(test_index.max(), representative_end_day + pd.Timedelta(days=1))
-    window_start = max(test_index.min(), window_end - pd.Timedelta(days=window_days))
-
+    window_start, window_end = select_representative_window(
+        test_index, actual_ev, window_days=window_days
+    )
     mask = (test_index >= window_start) & (test_index < window_end)
 
     return plot_forecasts(

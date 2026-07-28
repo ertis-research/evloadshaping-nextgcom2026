@@ -5,7 +5,7 @@ telemetry, since adjacent intervals share forecast error (a cloud transient
 or a charging session spans several consecutive samples). This module
 resamples contiguous blocks with replacement instead of individual points,
 so within-block temporal correlation is preserved in each resample -- the
-methodology described in the paper's Section VI-B but, until now, never
+methodology described in the paper's Section IV-C but, until now, never
 checked into the repository the paper points readers to.
 """
 

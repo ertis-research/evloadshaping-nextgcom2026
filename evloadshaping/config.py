@@ -12,6 +12,14 @@ EV_DEMAND_COLUMN = "total_ev_power_demand"
 # retrained once per seed and reported as mean +/- std, since a single-seed
 # number can't be told apart from ordinary training-variance noise.
 SEEDS = (42, 43, 44, 45, 46)
+
+# The run of record for artifacts that have no meaningful average: the saved
+# model files, the traces Fig. 1 plots, the paired predictions the block
+# bootstrap resamples, and the controller event log (throttle counts are
+# integers, and the paper reasons about the individual events). Every XGBoost
+# number the paper *reports* is a mean over SEEDS; this seed only fixes which
+# single fitted model those non-averageable artifacts come from.
+REFERENCE_SEED = 42
 BASE_WEATHER_COLUMNS = [
     "uma_adabyron_weatherStation_solarRadiation",
     "uma_adabyron_weatherStation_temperature",

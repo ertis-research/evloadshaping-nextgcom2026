@@ -89,12 +89,35 @@ def count_ridge_parameters(pipeline: Pipeline) -> int:
     return int(np.asarray(ridge.coef_).size + np.asarray(ridge.intercept_).size)
 
 
+def fit_xgboost_seeds(
+    x_train: pd.DataFrame,
+    y_train: pd.Series,
+    x_test: pd.DataFrame,
+    seeds: tuple[int, ...] = SEEDS,
+) -> list[dict[str, object]]:
+    """Train one model per seed and keep both the model and its test predictions.
+
+    Every seed-averaged quantity the paper reports (accuracy, the hourly error
+    breakdown, gain importances, the Fig. 1 window errors) needs the same set
+    of fitted models, so they are trained once here and shared rather than
+    retrained per analysis.
+    """
+    fitted: list[dict[str, object]] = []
+    for seed in seeds:
+        model = train_model(x_train, y_train, random_state=seed)
+        fitted.append(
+            {"seed": seed, "model": model, "predictions": model.predict(x_test)}
+        )
+    return fitted
+
+
 def evaluate_xgboost_seeds(
     x_train: pd.DataFrame,
     y_train: pd.Series,
     x_test: pd.DataFrame,
     y_test: pd.Series,
     seeds: tuple[int, ...] = SEEDS,
+    fitted: list[dict[str, object]] | None = None,
 ) -> dict[str, float]:
     """Retrain XGBoost once per seed and report mean +/- std MAE/RMSE.
 
@@ -102,12 +125,16 @@ def evaluate_xgboost_seeds(
     control real stochastic row/column sampling during training, not just an
     arbitrary tie-break -- so, like the PyTorch comparison, a single seed's
     result can't be told apart from ordinary training variance without this.
+
+    Pass ``fitted`` (from fit_xgboost_seeds) to score models that have already
+    been trained for another analysis instead of retraining them.
     """
+    if fitted is None:
+        fitted = fit_xgboost_seeds(x_train, y_train, x_test, seeds=seeds)
     per_seed = []
-    for seed in seeds:
-        model = train_model(x_train, y_train, random_state=seed)
-        metrics = evaluate_model(y_test, model.predict(x_test))
-        metrics["n_parameters"] = count_xgboost_parameters(model)
+    for entry in fitted:
+        metrics = evaluate_model(y_test, entry["predictions"])
+        metrics["n_parameters"] = count_xgboost_parameters(entry["model"])
         per_seed.append(metrics)
     return aggregate_seeds(per_seed)
 
@@ -116,7 +143,7 @@ def persistence_predictions(x_test: pd.DataFrame) -> tuple[np.ndarray, np.ndarra
     """The naive t+1 forecast: carry forward the current-timestep observation.
 
     Shared by the baseline comparison and by the orchestrator counterfactual
-    (Section VI-C), which reruns the edge decision on persistence forecasts
+    (Section IV-G), which reruns the edge decision on persistence forecasts
     to quantify what XGBoost actually buys the control loop.
     """
     return (
@@ -188,26 +215,32 @@ def run_feature_ablation(
     y_pv_test: pd.Series,
     y_ev_train: pd.Series,
     y_ev_test: pd.Series,
+    seeds: tuple[int, ...] = SEEDS,
 ) -> dict[str, dict[str, dict[str, float]]]:
     """Quantify the contribution of lag and rolling-mean features.
 
     Trains the same XGBoost configuration on a reduced "base" feature set
     (current-timestep weather/demand/time signals only, no lags or rolling
-    means) and compares it against the full engineered feature set.
+    means) and compares it against the full engineered feature set. Averaged
+    over SEEDS, because the full-feature side of the comparison is a 5-seed
+    mean and an ablation delta between a mean and a single run would fold
+    training variance into what it attributes to the features.
     """
     base_columns = [c for c in BASE_ONLY_FEATURE_COLUMNS if c in x_train.columns]
     x_train_base = x_train[base_columns]
     x_test_base = x_test[base_columns]
 
-    model_pv_base = train_model(x_train_base, y_pv_train)
-    model_ev_base = train_model(x_train_base, y_ev_train)
+    base_metrics = {}
+    for target, y_train, y_test in (
+        ("pv", y_pv_train, y_pv_test),
+        ("ev", y_ev_train, y_ev_test),
+    ):
+        fitted = fit_xgboost_seeds(x_train_base, y_train, x_test_base, seeds=seeds)
+        base_metrics[target] = aggregate_seeds(
+            [evaluate_model(y_test, entry["predictions"]) for entry in fitted]
+        )
 
-    return {
-        "base_features_only": {
-            "pv": evaluate_model(y_pv_test, model_pv_base.predict(x_test_base)),
-            "ev": evaluate_model(y_ev_test, model_ev_base.predict(x_test_base)),
-        },
-    }
+    return {"base_features_only": base_metrics}
 
 
 def save_feature_importance(
@@ -220,6 +253,30 @@ def save_feature_importance(
         }
     ).sort_values("importance", ascending=False)
     importance.to_csv(output_path, index=False)
+
+
+def seed_averaged_feature_importance(
+    fitted: list[dict[str, object]], feature_names: list[str]
+) -> pd.DataFrame:
+    """Mean +/- std gain importance per feature across the per-seed models.
+
+    Gain importance is a property of the fitted tree structure, so it shifts
+    with the seed exactly as the accuracy metrics do; the published table
+    reports the mean so no row rests on a single run.
+    """
+    per_seed = np.vstack(
+        [np.asarray(entry["model"].feature_importances_, dtype=float) for entry in fitted]
+    )
+    frame = pd.DataFrame(
+        {
+            "feature": feature_names,
+            "importance": per_seed.mean(axis=0),
+            "importance_std": per_seed.std(axis=0, ddof=1)
+            if len(fitted) > 1
+            else np.zeros(per_seed.shape[1]),
+        }
+    )
+    return frame.sort_values("importance", ascending=False).reset_index(drop=True)
 
 
 def benchmark_inference_latency(

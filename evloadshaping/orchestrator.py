@@ -123,7 +123,7 @@ def orchestrator_event_log(
     """Per-event detail for every interval where the deterministic rule throttles.
 
     The aggregate throttle rate (summarize_orchestration) is too sparse at
-    realistic grid limits (Section VI-D) to say anything about control
+    realistic grid limits (Section IV-H) to say anything about control
     quality -- whether throttle magnitudes are sensible, or whether the
     controller is reacting to real supply/demand mismatches rather than
     forecast noise. This logs every triggering interval individually,
@@ -170,7 +170,7 @@ def orchestrator_agreement(
 ) -> dict[str, float | int]:
     """Compare the orchestrator's binary throttle decision under two forecast sources.
 
-    Section VI-C reruns the orchestrator on persistence forecasts to quantify
+    Section IV-G reruns the orchestrator on persistence forecasts to quantify
     what a more accurate forecaster (XGBoost) actually buys the control loop:
     forecast-accuracy differences that don't flip the throttle/no-throttle
     decision don't change the deployed system's behavior.

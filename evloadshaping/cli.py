@@ -14,7 +14,12 @@ import matplotlib.pyplot as plt
 import pandas as pd
 from pathlib import Path
 
-from .analysis import charger_utilization_stats, hourly_error_breakdown
+from .analysis import (
+    charger_utilization_stats,
+    hourly_error_breakdown_seeds,
+    window_error_metrics,
+)
+from .config import REFERENCE_SEED, SEEDS
 from .data import load_extended_raw, load_raw_data
 from .features import build_features, split_data
 from .models import (
@@ -22,10 +27,10 @@ from .models import (
     compute_baselines,
     evaluate_model,
     evaluate_xgboost_seeds,
+    fit_xgboost_seeds,
     persistence_predictions,
     run_feature_ablation,
-    save_feature_importance,
-    train_model,
+    seed_averaged_feature_importance,
 )
 from .orchestrator import (
     edge_orchestrator,
@@ -99,19 +104,40 @@ def main() -> None:
     )
     print(f"Train rows: {len(x_train):,} | Test rows: {len(x_test):,}")
 
-    print("Training XGBoost models...")
-    model_pv = train_model(x_train, y_pv_train)
-    model_ev = train_model(x_train, y_ev_train)
+    print(f"Training XGBoost models across {len(SEEDS)} seeds {SEEDS}...")
+    fitted_pv = fit_xgboost_seeds(x_train, y_pv_train, x_test)
+    fitted_ev = fit_xgboost_seeds(x_train, y_ev_train, x_test)
 
-    pv_predictions = model_pv.predict(x_test)
-    ev_predictions = model_ev.predict(x_test)
+    print(f"Evaluating XGBoost stability across {len(SEEDS)} seeds...")
+    xgb_pv_seeds = evaluate_xgboost_seeds(
+        x_train, y_pv_train, x_test, y_pv_test, fitted=fitted_pv
+    )
+    xgb_ev_seeds = evaluate_xgboost_seeds(
+        x_train, y_ev_train, x_test, y_ev_test, fitted=fitted_ev
+    )
+    print("Evaluation metrics (mean +/- std across seeds)")
+    print(
+        f"PV   MAE: {xgb_pv_seeds['mae']:.2f} +/- {xgb_pv_seeds['mae_std']:.2f} W | "
+        f"RMSE: {xgb_pv_seeds['rmse']:.2f} +/- {xgb_pv_seeds['rmse_std']:.2f} W"
+    )
+    print(
+        f"EV   MAE: {xgb_ev_seeds['mae']:.2f} +/- {xgb_ev_seeds['mae_std']:.2f} W | "
+        f"RMSE: {xgb_ev_seeds['rmse']:.2f} +/- {xgb_ev_seeds['rmse_std']:.2f} W"
+    )
 
+    # Artifacts that cannot be averaged (saved models, plotted traces, the
+    # bootstrap's paired predictions, the controller event log) come from the
+    # single reference-seed run; every reported metric above is a seed mean.
+    reference_pv = next(e for e in fitted_pv if e["seed"] == REFERENCE_SEED)
+    reference_ev = next(e for e in fitted_ev if e["seed"] == REFERENCE_SEED)
+    model_pv, pv_predictions = reference_pv["model"], reference_pv["predictions"]
+    model_ev, ev_predictions = reference_ev["model"], reference_ev["predictions"]
     pv_metrics = evaluate_model(y_pv_test, pv_predictions)
     ev_metrics = evaluate_model(y_ev_test, ev_predictions)
-
-    print("Evaluation metrics")
-    print(f"PV   MAE: {pv_metrics['mae']:.2f} W | RMSE: {pv_metrics['rmse']:.2f} W")
-    print(f"EV   MAE: {ev_metrics['mae']:.2f} W | RMSE: {ev_metrics['rmse']:.2f} W")
+    print(
+        f"Reference seed {REFERENCE_SEED} (plots, event log, bootstrap): "
+        f"PV MAE {pv_metrics['mae']:.2f} W | EV MAE {ev_metrics['mae']:.2f} W"
+    )
 
     print("Benchmarking single-sample inference latency (both targets)...")
     latency = benchmark_inference_latency(model_pv, model_ev, x_test)
@@ -120,23 +146,13 @@ def main() -> None:
         f"(mean over {latency['n_samples']} samples)"
     )
 
-    print("Evaluating XGBoost stability across 5 seeds...")
-    xgb_pv_seeds = evaluate_xgboost_seeds(x_train, y_pv_train, x_test, y_pv_test)
-    xgb_ev_seeds = evaluate_xgboost_seeds(x_train, y_ev_train, x_test, y_ev_test)
-    print(
-        f"XGB   PV MAE: {xgb_pv_seeds['mae']:.2f} +/- {xgb_pv_seeds['mae_std']:.2f} W | "
-        f"EV MAE: {xgb_ev_seeds['mae']:.2f} +/- {xgb_ev_seeds['mae_std']:.2f} W"
-    )
-
     feature_names = [column for column in x_train.columns]
     model_pv.save_model(str(args.output_dir / "model_pv.json"))
     model_ev.save_model(str(args.output_dir / "model_ev.json"))
-    save_feature_importance(
-        model_pv, feature_names, args.output_dir / "feature_importance_pv.csv"
-    )
-    save_feature_importance(
-        model_ev, feature_names, args.output_dir / "feature_importance_ev.csv"
-    )
+    importance_pv = seed_averaged_feature_importance(fitted_pv, feature_names)
+    importance_ev = seed_averaged_feature_importance(fitted_ev, feature_names)
+    importance_pv.to_csv(args.output_dir / "feature_importance_pv.csv", index=False)
+    importance_ev.to_csv(args.output_dir / "feature_importance_ev.csv", index=False)
 
     predictions = pd.DataFrame(
         {
@@ -168,6 +184,21 @@ def main() -> None:
         output_path=args.output_dir / "forecast_plot_zoom.png",
     )
     plt.close(zoom_figure)
+
+    window_metrics = window_error_metrics(
+        x_test.index,
+        y_pv_test,
+        [entry["predictions"] for entry in fitted_pv],
+        y_ev_test,
+        [entry["predictions"] for entry in fitted_ev],
+    )
+    print(
+        f"Fig. 1 window {window_metrics['window_start'][:10]} to "
+        f"{window_metrics['window_end'][:10]}: "
+        f"PV MAE {window_metrics['pv_mae']:.2f} W | EV MAE {window_metrics['ev_mae']:.2f} W "
+        f"(EV peak {window_metrics['ev_peak_actual_w']:.0f} W against "
+        f"{window_metrics['ev_peak_actual_horizon_w']:.0f} W over the full horizon)"
+    )
 
     test_state = x_test.iloc[0]
     decision = edge_orchestrator(
@@ -216,6 +247,37 @@ def main() -> None:
         f"({event_log_default['genuine_risk'].sum()} genuine), "
         f"{len(event_log_1kw)} events at 1000 W "
         f"({event_log_1kw['genuine_risk'].sum()} genuine)"
+    )
+
+    # Throttle counts are integers over a handful of events, so they have no
+    # useful mean to report in place of the reference-seed run. Their spread
+    # across seeds is still worth knowing: it bounds how much of the event
+    # count is a property of the site rather than of one fitted model.
+    seed_throttle_counts = []
+    seed_genuine_counts = []
+    for pv_entry, ev_entry in zip(fitted_pv, fitted_ev):
+        seed_log = orchestrator_event_log(
+            pv_entry["predictions"],
+            ev_entry["predictions"],
+            y_pv_test.to_numpy(),
+            y_ev_test.to_numpy(),
+            connected_evs,
+            x_test.index,
+            grid_limit=args.grid_limit,
+        )
+        seed_throttle_counts.append(int(len(seed_log)))
+        seed_genuine_counts.append(int(seed_log["genuine_risk"].sum()))
+    throttle_seed_spread = {
+        "grid_limit_w": float(args.grid_limit),
+        "seeds": list(SEEDS),
+        "n_throttle_per_seed": seed_throttle_counts,
+        "n_genuine_risk_per_seed": seed_genuine_counts,
+        "n_throttle_min": min(seed_throttle_counts),
+        "n_throttle_max": max(seed_throttle_counts),
+    }
+    print(
+        f"Throttle events across seeds: {seed_throttle_counts} "
+        f"({seed_genuine_counts} genuine)"
     )
 
     print("Computing baselines (persistence, ridge regression)...")
@@ -304,8 +366,25 @@ def main() -> None:
                 "target": "ev",
                 **ablation["base_features_only"]["ev"],
             },
-            {"feature_set": "full", "target": "pv", **pv_metrics},
-            {"feature_set": "full", "target": "ev", **ev_metrics},
+            # The full-feature side is the same seed-averaged XGBoost that the
+            # baseline table reports, so both sides of the ablation delta are
+            # means over the same seeds.
+            {
+                "feature_set": "full",
+                "target": "pv",
+                "mae": xgb_pv_seeds["mae"],
+                "rmse": xgb_pv_seeds["rmse"],
+                "mae_std": xgb_pv_seeds["mae_std"],
+                "rmse_std": xgb_pv_seeds["rmse_std"],
+            },
+            {
+                "feature_set": "full",
+                "target": "ev",
+                "mae": xgb_ev_seeds["mae"],
+                "rmse": xgb_ev_seeds["rmse"],
+                "mae_std": xgb_ev_seeds["mae_std"],
+                "rmse_std": xgb_ev_seeds["rmse_std"],
+            },
         ]
     ).to_csv(args.output_dir / "ablation_study.csv", index=False)
 
@@ -322,11 +401,20 @@ def main() -> None:
     )
     plt.close(sensitivity_figure)
 
-    print("Computing hourly error breakdown...")
-    hourly_errors = hourly_error_breakdown(
-        x_test.index, y_pv_test, pv_predictions, y_ev_test, ev_predictions
+    print("Computing hourly error breakdown (seed-averaged)...")
+    hourly_errors = hourly_error_breakdown_seeds(
+        x_test.index,
+        y_pv_test,
+        [entry["predictions"] for entry in fitted_pv],
+        y_ev_test,
+        [entry["predictions"] for entry in fitted_ev],
     )
     hourly_errors.to_csv(args.output_dir / "hourly_error_breakdown.csv", index=False)
+    print(
+        "Largest across-seed std in any bucket: "
+        f"PV {hourly_errors['pv_mae_std'].max():.2f} W | "
+        f"EV {hourly_errors['ev_mae_std'].max():.2f} W"
+    )
 
     print("Loading per-charger telemetry for utilization analysis...")
     extended_frame = load_extended_raw(args.data_path, charger_ids)
@@ -342,7 +430,10 @@ def main() -> None:
     torch_results = None
     if args.include_torch:
         print("Training PyTorch MLP/LSTM/CNN comparison (this takes a while)...")
-        from .torch_models import SEEDS, run_torch_comparison  # lazy: torch is optional
+        # Lazy: torch is optional. SEEDS comes from .config, which
+        # torch_models shares, so it is not re-imported (and must not be, or
+        # it would shadow the module-level import throughout main()).
+        from .torch_models import run_torch_comparison
 
         torch_results = run_torch_comparison(
             x_train, x_test, y_pv_train, y_pv_test, y_ev_train, y_ev_test
@@ -389,11 +480,18 @@ def main() -> None:
         "charger_ids": charger_ids,
         "n_train": int(len(x_train)),
         "n_test": int(len(x_test)),
+        "reference_seed": REFERENCE_SEED,
+        "seeds": list(SEEDS),
+        # Reference-seed metrics: reported only to document which single run
+        # backs the plots, the event log, and the bootstrap. The paper quotes
+        # xgboost_seed_stability instead.
         "pv_metrics": pv_metrics,
         "ev_metrics": ev_metrics,
         "xgboost_seed_stability": {"pv": xgb_pv_seeds, "ev": xgb_ev_seeds},
+        "forecast_window_metrics": window_metrics,
         "edge_decision": decision,
         "orchestration_stats": orchestration_stats,
+        "throttle_seed_spread": throttle_seed_spread,
         "orchestrator_event_summary": {
             f"{int(args.grid_limit)}w": {
                 "n_events": int(len(event_log_default)),

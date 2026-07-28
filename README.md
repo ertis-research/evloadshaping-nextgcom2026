@@ -19,6 +19,8 @@ This workspace contains a rapid research prototype for local forecasting and edg
 
 **Reproducibility:** every stochastic step (XGBoost's row/column subsampling, the PyTorch initializations, the block bootstrap) uses the fixed seeds in `evloadshaping/config.py` (`SEEDS = (42, 43, 44, 45, 46)`), so the CLI and notebooks reproduce the paper's tables and figures exactly, not just approximately.
 
+**Seeds and what the paper reports:** every XGBoost number the paper prints is a mean over all five seeds, including the accuracy metrics, the feature ablation, the hourly error breakdown, the gain importances, and the Fig. 1 window errors. A few artifacts have no meaningful average and come instead from `REFERENCE_SEED` (42): the saved model files, the traces Fig. 1 plots, the paired predictions the block bootstrap resamples, and the controller event log, whose throttle counts are integers the paper reasons about individually. For those, `summary.json` also records the across-seed spread (`throttle_seed_spread`) so the reference run can be told apart from a seed artifact.
+
 ## Dataset note
 
 This repository does not include the raw telemetry CSV. The UMA Adabyron dataset is private and available on request from its maintainers, not redistributed here. To run the pipeline, place your own export (or a compatible CSV with the same column naming convention) at `data/20260514_uma_adabyron_data.csv`, or pass a different path via `--data-path`. The pipeline discovers whichever EV charger columns are present in the header and only loads the columns it needs, so it adapts automatically to datasets with a different charger count.
@@ -42,8 +44,8 @@ uv run --extra notebooks jupyter lab notebooks/
 ```
 
 1. [01_data_exploration.ipynb](notebooks/01_data_exploration.ipynb) loads the raw telemetry, resamples it, and looks at the PV/EV signals and their correlations before any modeling.
-2. [02_forecasting_and_baselines.ipynb](notebooks/02_forecasting_and_baselines.ipynb) trains the XGBoost forecasters (Table II), compares against persistence/ridge and the 5-seed XGBoost mean (Table IV), runs the block bootstrap significance test (Section VI-B), and reproduces the ablation study and Fig. 1.
-3. [03_orchestrator_and_sensitivity.ipynb](notebooks/03_orchestrator_and_sensitivity.ipynb) runs the deterministic orchestrator, logs individual throttle events with genuine-risk flags, reruns the orchestrator on persistence forecasts to quantify what the forecaster buys the control loop (Section VI-C), sweeps the safe grid-limit parameter, and breaks down forecast error by time of day and by charger.
+2. [02_forecasting_and_baselines.ipynb](notebooks/02_forecasting_and_baselines.ipynb) trains the XGBoost forecasters, compares them against persistence/ridge and the deep-learning architectures (Table II), runs the block bootstrap significance test (Section IV-C), and reproduces the ablation study (Table V) and Fig. 1.
+3. [03_orchestrator_and_sensitivity.ipynb](notebooks/03_orchestrator_and_sensitivity.ipynb) runs the deterministic orchestrator, logs individual throttle events with genuine-risk flags, reruns the orchestrator on persistence forecasts to quantify what the forecaster buys the control loop (Section IV-G), sweeps the safe grid-limit parameter, and breaks down forecast error by time of day and by charger.
 4. [04_deep_learning_comparison.ipynb](notebooks/04_deep_learning_comparison.ipynb) trains the PyTorch MLP/LSTM/CNN comparison and compares it against XGBoost's 5-seed mean on the same basis (requires `--extra torch`).
 
 Each notebook is self-contained (it reloads and rebuilds whatever it needs), so they can be run independently and in any order. They import directly from the `evloadshaping` package rather than duplicating logic.
@@ -96,19 +98,19 @@ explicit index into the test split instead of auto-selection).
 The pipeline writes the following files to `outputs/`:
 
 - `model_pv.json`, `model_ev.json` are the trained XGBoost models.
-- `feature_importance_pv.csv`, `feature_importance_ev.csv` hold the per-feature gain importances.
+- `feature_importance_pv.csv`, `feature_importance_ev.csv` hold the per-feature gain importances as a mean and std across the 5 seeds. Gain shifts between near-duplicate features (current PV and its 15-minute lag) from seed to seed, so the per-feature std matters here as much as the mean.
 - `test_predictions.csv` holds actual vs. predicted values for both targets on the held-out split.
 - `forecast_plot.png` is the forecast trace over the full test horizon (each day is a sliver at this scale, so it works as a coverage sanity check but not for reading forecast quality).
 - `forecast_plot_zoom.png` shows the same traces over a two-week window chosen for typical (not spike) EV demand, readable at daily resolution. This is the paper's Fig. 1.
 - `baseline_comparison.csv` compares XGBoost, persistence, and ridge regression by MAE/RMSE per target. XGBoost's row is a mean/std over 5 seeds (its `subsample`/`colsample_bytree` < 1 make `random_state` a real variance source), while persistence and ridge are deterministic solvers with no seed dependence.
-- `bootstrap_significance.csv` holds the moving block bootstrap (24h blocks, 10,000 resamples) 95% CI on `MAE(XGBoost) - MAE(persistence)` per target, i.e. whether XGBoost's point-estimate edge over persistence survives temporal autocorrelation in the 15-minute series (Section VI-B).
+- `bootstrap_significance.csv` holds the moving block bootstrap (24h blocks, 10,000 resamples) 95% CI on `MAE(XGBoost) - MAE(persistence)` per target, i.e. whether XGBoost's point-estimate edge over persistence survives temporal autocorrelation in the 15-minute series (Section IV-C).
 - `baseline_comparison_with_torch.csv` adds the PyTorch MLP/LSTM/CNN comparison and the engineered-feature LSTM variant to the above, each as mean/std MAE and RMSE over the same 5 seeds (only written with `--include-torch`).
-- `ablation_study.csv` compares the base (current-timestep only) feature set against the full engineered one.
+- `ablation_study.csv` compares the base (current-timestep only) feature set against the full engineered one, both sides averaged over the same 5 seeds so the ablation delta does not mix a mean with a single run.
 - `grid_sensitivity.csv`, `grid_sensitivity_plot.png` give throttle rate and mean per-EV reduction swept across safe grid limits.
-- `hourly_error_breakdown.csv` buckets forecast MAE by time of day.
+- `hourly_error_breakdown.csv` buckets forecast MAE by time of day, seed-averaged, with the across-seed std per bucket.
 - `charger_utilization.csv` reports per-charger total energy delivered and active-charging share over the full telemetry span.
 - `orchestrator_events_<grid_limit>w.csv`, `orchestrator_events_1000w.csv` hold one row per triggered throttle event at the run's `--grid-limit` and at a fixed 1 kW stress case, including a `genuine_risk` flag computed from actual (not forecasted) PV/EV values. The default grid limit triggers too rarely to assess control quality from the aggregate rate alone, so these logs let each event be checked individually instead of only counted.
-- `summary.json` is the consolidated run summary including all of the above, plus the persistence-forecast orchestrator counterfactual (throttle rate, raw decision-agreement rate, Cohen's kappa, and the agreement restricted to intervals where either controller acts, Section VI-C).
+- `summary.json` is the consolidated run summary including all of the above, plus the persistence-forecast orchestrator counterfactual (throttle rate, raw decision-agreement rate, Cohen's kappa, and the agreement restricted to intervals where either controller acts, Section IV-G).
 
 ## Research framing
 
