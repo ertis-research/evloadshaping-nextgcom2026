@@ -46,7 +46,7 @@ def aggregate_seeds(per_seed_metrics: list[dict[str, float]]) -> dict[str, float
 
     Generic over whatever keys each per-seed dict carries (mae/rmse, and
     optionally n_parameters for architectures like XGBoost whose tree
-    structure -- and therefore node count -- varies slightly per seed under
+    structure, and therefore node count, varies slightly per seed under
     subsample/colsample_bytree). Reports mean under the original key (so
     existing CSV/print consumers keep working unchanged) plus "*_std" across
     SEEDS, since a single-seed number is otherwise indistinguishable from
@@ -69,9 +69,9 @@ def count_xgboost_parameters(model: xgb.XGBRegressor) -> int:
     total node count is the natural, serialization-format-independent measure
     of model capacity to compare against nn.Module parameter counts (see
     torch_models.count_torch_parameters). File size on disk is not a
-    substitute for this -- XGBoost's save_model formats also embed per-node
-    training bookkeeping (loss_changes, sum_hessian) that inflates KB well
-    beyond the actual parameter count.
+    substitute for this, because XGBoost's save_model formats also embed
+    per-node training bookkeeping (loss_changes, sum_hessian) that inflates
+    KB well beyond the actual parameter count.
     """
     total = 0
     for tree_json in model.get_booster().get_dump(dump_format="json"):
@@ -123,7 +123,7 @@ def evaluate_xgboost_seeds(
 
     subsample=0.9 and colsample_bytree=0.9 make XGBoost's random_state
     control real stochastic row/column sampling during training, not just an
-    arbitrary tie-break -- so, like the PyTorch comparison, a single seed's
+    arbitrary tie-break. So, like the PyTorch comparison, a single seed's
     result can't be told apart from ordinary training variance without this.
 
     Pass ``fitted`` (from fit_xgboost_seeds) to score models that have already
@@ -289,9 +289,9 @@ def benchmark_inference_latency(
 
     Training happens once; the deployed edge service only ever calls
     predict() on one fresh 15-minute sample at a time. Times n_samples
-    individual (pv, ev) prediction pairs -- not a batch predict, which would
-    understate the per-interval latency a real deployment actually sees --
-    and reports the mean. This is the only place this number is measured:
+    individual (pv, ev) prediction pairs, not a batch predict, which would
+    understate the per-interval latency a real deployment actually sees, and
+    reports the mean. This is the only place this number is measured:
     the paper's implementation-details latency claim previously existed only
     as prose, recomputed by hand and never checked into the repository it
     points readers to.

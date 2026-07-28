@@ -124,8 +124,8 @@ def orchestrator_event_log(
 
     The aggregate throttle rate (summarize_orchestration) is too sparse at
     realistic grid limits (Section IV-G) to say anything about control
-    quality -- whether throttle magnitudes are sensible, or whether the
-    controller is reacting to real supply/demand mismatches rather than
+    quality, meaning whether throttle magnitudes are sensible and whether
+    the controller is reacting to real supply/demand mismatches instead of
     forecast noise. This logs every triggering interval individually,
     including a "genuine_risk" flag computed from the *actual* (not
     forecasted) PV/demand values, so each event can be checked rather than

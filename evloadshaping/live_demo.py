@@ -7,7 +7,7 @@ predict), timed per interval, fed straight into the orchestrator, printed
 as it happens with a short delay so it reads as a live stream on camera.
 
 This intentionally does no training and reports nothing that isn't already
-in the paper -- it is a presentation aid, replaying real held-out data
+in the paper. It is a presentation aid, replaying real held-out data
 through the real trained models and the real orchestrator rule.
 """
 
@@ -54,7 +54,7 @@ def find_demo_window(
     """Pick a short, compelling window: centered on the largest genuine throttle event.
 
     Computed from the data (not a hard-coded date), matching the same
-    principle plotting.plot_forecast_zoom uses -- so this generalizes to any
+    principle plotting.plot_forecast_zoom uses, so this generalizes to any
     dataset/test split instead of only this one. Falls back to the middle of
     the test set if nothing genuinely triggers at this grid limit.
     """
@@ -143,8 +143,8 @@ def main() -> None:
 
     if not (args.model_dir / "model_pv.json").exists():
         raise SystemExit(
-            f"No trained model found at {args.model_dir}/model_pv.json -- "
-            "run `python pipeline.py` first to train and save the models."
+            f"No trained model found at {args.model_dir}/model_pv.json. "
+            "Run `python pipeline.py` first to train and save the models."
         )
 
     print(f"Loading trained models from {args.model_dir}...")

@@ -422,7 +422,7 @@ def main() -> None:
     charger_stats.to_csv(args.output_dir / "charger_utilization.csv", index=False)
 
     # End of the "full pipeline" the paper's Implementation section describes
-    # (CSV ingestion through charger utilization) -- excludes the optional
+    # (CSV ingestion through charger utilization). Excludes the optional
     # --include-torch block below, which is separately slow by design.
     full_run_seconds = time.perf_counter() - run_start
     print(f"Full pipeline run completed in {full_run_seconds:.1f}s (includes training)")

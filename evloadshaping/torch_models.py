@@ -4,7 +4,7 @@ This module is a strictly optional add-on for evaluating whether a nonlinear
 neural net, or a learned temporal representation, beats XGBoost and its hand-
 engineered lag features on this task. It is never imported by the default CLI
 pipeline (see cli.py's --include-torch flag), so a standard edge deployment
-does not need PyTorch installed -- consistent with the project's lightweight,
+does not need PyTorch installed, consistent with the project's lightweight,
 edge-deployable framing.
 
 Three input representations are used, on purpose:
@@ -33,8 +33,8 @@ import os
 # Must be set before `import torch`: when XGBoost/scikit-learn (already
 # imported by models.py/cli.py) and PyTorch each initialize their own OpenMP
 # runtime in the same process, they deadlock silently on this machine as soon
-# as PyTorch actually spins up its thread pool -- no exception, no traceback,
-# just a hung process. KMP_DUPLICATE_LIB_OK=TRUE plus a single-threaded torch
+# as PyTorch actually spins up its thread pool, with no exception and no
+# traceback, just a hung process. KMP_DUPLICATE_LIB_OK=TRUE plus a single-threaded torch
 # is the standard workaround. Only set if the caller hasn't already chosen a
 # value, so an explicit environment override still wins.
 os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
@@ -55,7 +55,7 @@ SEQUENCE_WINDOW = 8  # 2 hours of 15-minute steps
 
 def count_torch_parameters(model: nn.Module) -> int:
     """Total learnable scalars (weights + biases), the nn.Module analogue of
-    models.count_xgboost_parameters -- lets the paper compare model capacity
+    models.count_xgboost_parameters. Lets the paper compare model capacity
     on the same footing across architectures instead of on-disk file size,
     which varies with serialization format rather than actual capacity.
     """
@@ -67,8 +67,8 @@ def _device() -> torch.device:
     # this module ran as a detached/non-interactive process (no controlling
     # terminal), reproducibly, even though it worked fine interactively. These
     # networks are tiny, so CPU training is fast enough and avoids that
-    # environment-specific failure mode entirely -- also a better match for
-    # the paper's no-special-hardware framing.
+    # environment-specific failure mode entirely, and it is a better match
+    # for the paper's no-special-hardware framing.
     if torch.cuda.is_available():
         return torch.device("cuda")
     return torch.device("cpu")
@@ -157,7 +157,7 @@ def _train_regressor(
 ) -> nn.Module:
     """Train with early stopping on a validation slice carved from the training split.
 
-    The held-out test split is never touched here -- it is only used for the
+    The held-out test split is never touched here. It is only used for the
     final evaluate_model call in run_torch_comparison, after training and
     model selection are both finished.
 
@@ -165,7 +165,7 @@ def _train_regressor(
     immediately before constructing the model, and nothing consumes RNG state
     between construction and this call, so reseeding here would silently pin
     the DataLoader's shuffle order to whatever value last reseeded regardless
-    of which seed the caller intended -- defeating multi-seed runs.
+    of which seed the caller intended, defeating multi-seed runs.
     """
     device = _device()
     model = model.to(device)
