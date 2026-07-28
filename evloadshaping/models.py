@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import time
 import warnings
 from pathlib import Path
@@ -12,6 +13,7 @@ import xgboost as xgb
 from sklearn.linear_model import Ridge
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 from sklearn.pipeline import make_pipeline
+from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
 from .config import BASE_ONLY_FEATURE_COLUMNS, EV_DEMAND_COLUMN, PV_COLUMN, SEEDS
@@ -40,21 +42,51 @@ def evaluate_model(y_true: pd.Series, predictions: np.ndarray) -> dict[str, floa
 
 
 def aggregate_seeds(per_seed_metrics: list[dict[str, float]]) -> dict[str, float]:
-    """Collapse a list of per-seed evaluate_model outputs into mean +/- std.
+    """Collapse a list of per-seed metric dicts into mean +/- std per key.
 
-    Reports mean under the original "mae"/"rmse" keys (so existing CSV/print
-    consumers keep working unchanged) plus "*_std" across SEEDS, since a
-    single-seed number is otherwise indistinguishable from run-to-run
-    training variance rather than a real effect.
+    Generic over whatever keys each per-seed dict carries (mae/rmse, and
+    optionally n_parameters for architectures like XGBoost whose tree
+    structure -- and therefore node count -- varies slightly per seed under
+    subsample/colsample_bytree). Reports mean under the original key (so
+    existing CSV/print consumers keep working unchanged) plus "*_std" across
+    SEEDS, since a single-seed number is otherwise indistinguishable from
+    run-to-run training variance rather than a real effect.
     """
-    maes = np.array([m["mae"] for m in per_seed_metrics])
-    rmses = np.array([m["rmse"] for m in per_seed_metrics])
-    return {
-        "mae": float(maes.mean()),
-        "mae_std": float(maes.std(ddof=1)),
-        "rmse": float(rmses.mean()),
-        "rmse_std": float(rmses.std(ddof=1)),
-    }
+    aggregated: dict[str, float] = {}
+    for key in per_seed_metrics[0]:
+        values = np.array([m[key] for m in per_seed_metrics], dtype=float)
+        aggregated[key] = float(values.mean())
+        if len(values) > 1:
+            aggregated[f"{key}_std"] = float(values.std(ddof=1))
+    return aggregated
+
+
+def count_xgboost_parameters(model: xgb.XGBRegressor) -> int:
+    """Count total nodes (splits + leaves) across all trees in a fitted model.
+
+    The tree-ensemble analogue of a neural net's parameter count: each split
+    node stores a feature index and threshold, each leaf stores a value, so
+    total node count is the natural, serialization-format-independent measure
+    of model capacity to compare against nn.Module parameter counts (see
+    torch_models.count_torch_parameters). File size on disk is not a
+    substitute for this -- XGBoost's save_model formats also embed per-node
+    training bookkeeping (loss_changes, sum_hessian) that inflates KB well
+    beyond the actual parameter count.
+    """
+    total = 0
+    for tree_json in model.get_booster().get_dump(dump_format="json"):
+        stack = [json.loads(tree_json)]
+        while stack:
+            node = stack.pop()
+            total += 1
+            stack.extend(node.get("children", []))
+    return total
+
+
+def count_ridge_parameters(pipeline: Pipeline) -> int:
+    """Count coefficients + intercept of the Ridge step in a fitted pipeline."""
+    ridge = pipeline.named_steps["ridge"]
+    return int(np.asarray(ridge.coef_).size + np.asarray(ridge.intercept_).size)
 
 
 def evaluate_xgboost_seeds(
@@ -74,7 +106,9 @@ def evaluate_xgboost_seeds(
     per_seed = []
     for seed in seeds:
         model = train_model(x_train, y_train, random_state=seed)
-        per_seed.append(evaluate_model(y_test, model.predict(x_test)))
+        metrics = evaluate_model(y_test, model.predict(x_test))
+        metrics["n_parameters"] = count_xgboost_parameters(model)
+        per_seed.append(metrics)
     return aggregate_seeds(per_seed)
 
 
@@ -129,12 +163,20 @@ def compute_baselines(
 
     return {
         "persistence": {
-            "pv": evaluate_model(y_pv_test, persistence_pv),
-            "ev": evaluate_model(y_ev_test, persistence_ev),
+            # No learned parameters: predictions are just the current-timestep
+            # observation carried forward.
+            "pv": {**evaluate_model(y_pv_test, persistence_pv), "n_parameters": 0},
+            "ev": {**evaluate_model(y_ev_test, persistence_ev), "n_parameters": 0},
         },
         "ridge_regression": {
-            "pv": evaluate_model(y_pv_test, linreg_pv_preds),
-            "ev": evaluate_model(y_ev_test, linreg_ev_preds),
+            "pv": {
+                **evaluate_model(y_pv_test, linreg_pv_preds),
+                "n_parameters": count_ridge_parameters(linreg_pv),
+            },
+            "ev": {
+                **evaluate_model(y_ev_test, linreg_ev_preds),
+                "n_parameters": count_ridge_parameters(linreg_ev),
+            },
         },
     }
 

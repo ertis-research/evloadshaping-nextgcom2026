@@ -53,6 +53,15 @@ from .models import aggregate_seeds, evaluate_model
 SEQUENCE_WINDOW = 8  # 2 hours of 15-minute steps
 
 
+def count_torch_parameters(model: nn.Module) -> int:
+    """Total learnable scalars (weights + biases), the nn.Module analogue of
+    models.count_xgboost_parameters -- lets the paper compare model capacity
+    on the same footing across architectures instead of on-disk file size,
+    which varies with serialization format rather than actual capacity.
+    """
+    return sum(p.numel() for p in model.parameters())
+
+
 def _device() -> torch.device:
     # MPS (Apple GPU) is deliberately not used here: it hung indefinitely when
     # this module ran as a detached/non-interactive process (no controlling
@@ -262,12 +271,15 @@ def run_torch_comparison(
         for seed in SEEDS:
             torch.manual_seed(seed)
             model = MLPRegressor(input_dim=x_tr_s.shape[1])
+            n_parameters = count_torch_parameters(model)
             model = _train_regressor(model, x_tr_s, y_tr_s, x_val_s, y_val_s)
             model.eval()
             with torch.no_grad():
                 preds_std = model(torch.from_numpy(x_test_s).to(device)).cpu().numpy()
             preds = preds_std * y_std + y_mean
-            per_seed.append(evaluate_model(y_test, preds))
+            metrics = evaluate_model(y_test, preds)
+            metrics["n_parameters"] = n_parameters
+            per_seed.append(metrics)
         results.setdefault("mlp", {})[target_name] = aggregate_seeds(per_seed)
 
     # --- LSTM / CNN on raw sequence windows of the base (non-lagged) channels ---
@@ -299,6 +311,7 @@ def run_torch_comparison(
             for seed in SEEDS:
                 torch.manual_seed(seed)
                 model = model_cls(**model_kwargs)
+                n_parameters = count_torch_parameters(model)
                 trained = _train_regressor(
                     model, seq_tr_s, tgt_tr_s, seq_val_s, tgt_val_s
                 )
@@ -308,7 +321,9 @@ def run_torch_comparison(
                         trained(torch.from_numpy(seq_test_s).to(device)).cpu().numpy()
                     )
                 preds = preds_std * y_std + y_mean
-                per_seed.append(evaluate_model(target_test, preds))
+                metrics = evaluate_model(target_test, preds)
+                metrics["n_parameters"] = n_parameters
+                per_seed.append(metrics)
             results.setdefault(model_name, {})[target_name] = aggregate_seeds(
                 per_seed
             )
@@ -340,6 +355,7 @@ def run_torch_comparison(
         for seed in SEEDS:
             torch.manual_seed(seed)
             model = LSTMRegressor(n_channels=len(feature_channels))
+            n_parameters = count_torch_parameters(model)
             trained = _train_regressor(model, seq_tr_s, tgt_tr_s, seq_val_s, tgt_val_s)
             trained.eval()
             with torch.no_grad():
@@ -347,7 +363,9 @@ def run_torch_comparison(
                     trained(torch.from_numpy(seq_test_s).to(device)).cpu().numpy()
                 )
             preds = preds_std * y_std + y_mean
-            per_seed.append(evaluate_model(target_test, preds))
+            metrics = evaluate_model(target_test, preds)
+            metrics["n_parameters"] = n_parameters
+            per_seed.append(metrics)
         results.setdefault("lstm_features", {})[target_name] = aggregate_seeds(
             per_seed
         )
