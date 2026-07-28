@@ -44,8 +44,8 @@ uv run --extra notebooks jupyter lab notebooks/
 ```
 
 1. [01_data_exploration.ipynb](notebooks/01_data_exploration.ipynb) loads the raw telemetry, resamples it, and looks at the PV/EV signals and their correlations before any modeling.
-2. [02_forecasting_and_baselines.ipynb](notebooks/02_forecasting_and_baselines.ipynb) trains the XGBoost forecasters, compares them against persistence/ridge and the deep-learning architectures (Table II), runs the block bootstrap significance test (Section IV-C), and reproduces the ablation study (Table V) and Fig. 1.
-3. [03_orchestrator_and_sensitivity.ipynb](notebooks/03_orchestrator_and_sensitivity.ipynb) runs the deterministic orchestrator, logs individual throttle events with genuine-risk flags, reruns the orchestrator on persistence forecasts to quantify what the forecaster buys the control loop (Section IV-G), sweeps the safe grid-limit parameter, and breaks down forecast error by time of day and by charger.
+2. [02_forecasting_and_baselines.ipynb](notebooks/02_forecasting_and_baselines.ipynb) trains the XGBoost forecasters, compares them against persistence/ridge and the deep-learning architectures (Table I), runs the block bootstrap significance test (Section IV-C), and reproduces the ablation study (Table IV) and Fig. 1.
+3. [03_orchestrator_and_sensitivity.ipynb](notebooks/03_orchestrator_and_sensitivity.ipynb) runs the deterministic orchestrator, logs individual throttle events with genuine-risk flags, reruns the orchestrator on persistence forecasts to quantify what the forecaster buys the control loop (Section IV-F), sweeps the safe grid-limit parameter, and breaks down forecast error by time of day and by charger.
 4. [04_deep_learning_comparison.ipynb](notebooks/04_deep_learning_comparison.ipynb) trains the PyTorch MLP/LSTM/CNN comparison and compares it against XGBoost's 5-seed mean on the same basis (requires `--extra torch`).
 
 Each notebook is self-contained (it reloads and rebuilds whatever it needs), so they can be run independently and in any order. They import directly from the `evloadshaping` package rather than duplicating logic.
@@ -110,7 +110,7 @@ The pipeline writes the following files to `outputs/`:
 - `hourly_error_breakdown.csv` buckets forecast MAE by time of day, seed-averaged, with the across-seed std per bucket.
 - `charger_utilization.csv` reports per-charger total energy delivered and active-charging share over the full telemetry span.
 - `orchestrator_events_<grid_limit>w.csv`, `orchestrator_events_1000w.csv` hold one row per triggered throttle event at the run's `--grid-limit` and at a fixed 1 kW stress case, including a `genuine_risk` flag computed from actual (not forecasted) PV/EV values. The default grid limit triggers too rarely to assess control quality from the aggregate rate alone, so these logs let each event be checked individually instead of only counted.
-- `summary.json` is the consolidated run summary including all of the above, plus the persistence-forecast orchestrator counterfactual (throttle rate, raw decision-agreement rate, Cohen's kappa, and the agreement restricted to intervals where either controller acts, Section IV-G).
+- `summary.json` is the consolidated run summary including all of the above, plus the persistence-forecast orchestrator counterfactual (throttle rate, raw decision-agreement rate, Cohen's kappa, and the agreement restricted to intervals where either controller acts, Section IV-F).
 
 ## Research framing
 

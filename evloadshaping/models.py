@@ -143,7 +143,7 @@ def persistence_predictions(x_test: pd.DataFrame) -> tuple[np.ndarray, np.ndarra
     """The naive t+1 forecast: carry forward the current-timestep observation.
 
     Shared by the baseline comparison and by the orchestrator counterfactual
-    (Section IV-G), which reruns the edge decision on persistence forecasts
+    (Section IV-F), which reruns the edge decision on persistence forecasts
     to quantify what XGBoost actually buys the control loop.
     """
     return (
