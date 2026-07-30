@@ -1,9 +1,9 @@
 cff-version: 1.2.0
 message: "If you use this software, please cite it as below."
-title: "evloadshaping: Edge-Driven Load Shaping for EV Charging Under Battery-Less Microgrid Constraints"
+title: "evloadcontrol: Edge-Driven Load Control for EV Charging Under Battery-Less Microgrid Constraints"
 type: software
 license: MIT
-repository-code: "https://github.com/ertis-research/evloadshaping-nextgcom2026"
+repository-code: "https://github.com/ertis-research/evloadcontrol-nextgcom2026"
 authors:
   - family-names: Chaves
     given-names: "Antonio Jesús"
@@ -22,7 +22,7 @@ authors:
 #
 # preferred-citation:
 #   type: conference-paper
-#   title: "Edge-Driven Load Shaping for EV Charging Under Battery-Less Microgrid Constraints"
+#   title: "Edge-Driven Load Control for EV Charging Under Battery-Less Microgrid Constraints"
 #   authors:
 #     - family-names: Chaves
 #       given-names: "Antonio Jesús"

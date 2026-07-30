@@ -1,4 +1,4 @@
-"""Deterministic edge orchestrator: forecast-driven load-shaping decisions."""
+"""Deterministic edge orchestrator: forecast-driven load-control decisions."""
 
 from __future__ import annotations
 

@@ -488,7 +488,7 @@ wheels = [
 ]
 
 [[package]]
-name = "evloadshaping"
+name = "evloadcontrol"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [

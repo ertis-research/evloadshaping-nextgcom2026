@@ -1,23 +1,23 @@
-# Edge-Driven Load Shaping for EV Charging
+# Edge-Driven Load Control for EV Charging
 
 This workspace contains a rapid research prototype for local forecasting and edge orchestration of EV charging demand against on-site photovoltaic generation. It is the code release for a short paper submitted to the NextGCom 2026 EVOLVE special session.
 
 ## What is included
 
-- A small package, [evloadshaping/](evloadshaping/), that:
-  - discovers the EV charger columns present in the dataset and loads only the columns it needs ([data.py](evloadshaping/data.py)),
-  - resamples raw telemetry into 15-minute intervals and engineers the lag/rolling/cyclical features ([features.py](evloadshaping/features.py)),
-  - trains the XGBoost forecasters and the persistence/ridge baselines ([models.py](evloadshaping/models.py)),
-  - implements the deterministic edge load-shaping decision, its persistence-forecast counterfactual, and the grid-limit sensitivity sweep ([orchestrator.py](evloadshaping/orchestrator.py)),
-  - runs a moving block bootstrap to check whether XGBoost's edge over persistence survives temporal autocorrelation ([significance.py](evloadshaping/significance.py)),
-  - computes the temporal-error and per-charger-utilization breakdowns ([analysis.py](evloadshaping/analysis.py)),
-  - plots the forecast traces and sensitivity curves ([plotting.py](evloadshaping/plotting.py)),
-  - and optionally trains a PyTorch MLP/LSTM/1-D CNN comparison against the same held-out split ([torch_models.py](evloadshaping/torch_models.py)), plus a second LSTM given XGBoost's own engineered features so the raw-sequence models face no input asymmetry, retraining each configuration across 5 seeds and reporting mean ± std. This last step is a strictly optional add-on, never imported by default.
+- A small package, [evloadcontrol/](evloadcontrol/), that:
+  - discovers the EV charger columns present in the dataset and loads only the columns it needs ([data.py](evloadcontrol/data.py)),
+  - resamples raw telemetry into 15-minute intervals and engineers the lag/rolling/cyclical features ([features.py](evloadcontrol/features.py)),
+  - trains the XGBoost forecasters and the persistence/ridge baselines ([models.py](evloadcontrol/models.py)),
+  - implements the deterministic edge load-control decision, its persistence-forecast counterfactual, and the grid-limit sensitivity sweep ([orchestrator.py](evloadcontrol/orchestrator.py)),
+  - runs a moving block bootstrap to check whether XGBoost's edge over persistence survives temporal autocorrelation ([significance.py](evloadcontrol/significance.py)),
+  - computes the temporal-error and per-charger-utilization breakdowns ([analysis.py](evloadcontrol/analysis.py)),
+  - plots the forecast traces and sensitivity curves ([plotting.py](evloadcontrol/plotting.py)),
+  - and optionally trains a PyTorch MLP/LSTM/1-D CNN comparison against the same held-out split ([torch_models.py](evloadcontrol/torch_models.py)), plus a second LSTM given XGBoost's own engineered features so the raw-sequence models face no input asymmetry, retraining each configuration across 5 seeds and reporting mean ± std. This last step is a strictly optional add-on, never imported by default.
 - Four notebooks in [notebooks/](notebooks/), the recommended way to explore this project (see below).
-- A thin CLI entry point in [pipeline.py](pipeline.py) (`evloadshaping/cli.py` underneath) that runs the full pipeline end to end and writes metrics, plots, and model artifacts to `outputs/`. It is useful for automation or a real edge deployment, and not required for exploring the results.
+- A thin CLI entry point in [pipeline.py](pipeline.py) (`evloadcontrol/cli.py` underneath) that runs the full pipeline end to end and writes metrics, plots, and model artifacts to `outputs/`. It is useful for automation or a real edge deployment, and not required for exploring the results.
 - Dependencies managed as a [uv](https://docs.astral.sh/uv/) project (`pyproject.toml` + `uv.lock`).
 
-**Reproducibility:** every stochastic step (XGBoost's row/column subsampling, the PyTorch initializations, the block bootstrap) uses the fixed seeds in `evloadshaping/config.py` (`SEEDS = (42, 43, 44, 45, 46)`), so the CLI and notebooks reproduce the paper's tables and figures exactly, not just approximately.
+**Reproducibility:** every stochastic step (XGBoost's row/column subsampling, the PyTorch initializations, the block bootstrap) uses the fixed seeds in `evloadcontrol/config.py` (`SEEDS = (42, 43, 44, 45, 46)`), so the CLI and notebooks reproduce the paper's tables and figures exactly, not just approximately.
 
 **Seeds and what the paper reports:** every XGBoost number the paper prints is a mean over all five seeds, including the accuracy metrics, the feature ablation, the hourly error breakdown, the gain importances, and the Fig. 1 window errors. A few artifacts have no meaningful average and come instead from `REFERENCE_SEED` (42): the saved model files, the traces Fig. 1 plots, the paired predictions the block bootstrap resamples, and the controller event log, whose throttle counts are integers the paper reasons about individually. For those, `summary.json` also records the across-seed spread (`throttle_seed_spread`) so the reference run can be told apart from a seed artifact.
 
@@ -48,7 +48,7 @@ uv run --extra notebooks jupyter lab notebooks/
 3. [03_orchestrator_and_sensitivity.ipynb](notebooks/03_orchestrator_and_sensitivity.ipynb) runs the deterministic orchestrator, logs individual throttle events with genuine-risk flags, reruns the orchestrator on persistence forecasts to quantify what the forecaster buys the control loop (Section IV-F), sweeps the safe grid-limit parameter, and breaks down forecast error by time of day and by charger.
 4. [04_deep_learning_comparison.ipynb](notebooks/04_deep_learning_comparison.ipynb) trains the PyTorch MLP/LSTM/CNN comparison and compares it against XGBoost's 5-seed mean on the same basis (requires `--extra torch`).
 
-Each notebook is self-contained (it reloads and rebuilds whatever it needs), so they can be run independently and in any order. They import directly from the `evloadshaping` package rather than duplicating logic.
+Each notebook is self-contained (it reloads and rebuilds whatever it needs), so they can be run independently and in any order. They import directly from the `evloadcontrol` package rather than duplicating logic.
 
 ## CLI (for automation or edge deployment)
 
@@ -70,11 +70,11 @@ To also run the PyTorch MLP/LSTM/CNN comparison against the same held-out split 
 uv run python pipeline.py --data-path data/20260514_uma_adabyron_data.csv --include-torch
 ```
 
-This is never required for the default pipeline. `evloadshaping.torch_models` is only imported when `--include-torch` is passed, so a standard edge deployment does not need PyTorch installed.
+This is never required for the default pipeline. `evloadcontrol.torch_models` is only imported when `--include-torch` is passed, so a standard edge deployment does not need PyTorch installed.
 
 ## Live demo
 
-For presentations, [live_demo.py](live_demo.py) (`evloadshaping/live_demo.py`
+For presentations, [live_demo.py](live_demo.py) (`evloadcontrol/live_demo.py`
 underneath) loads the already-trained models from a prior `pipeline.py` run
 and replays a short window of the held-out test split one interval at a
 time, single-sample inference (not a batch predict), timed and printed live
@@ -114,7 +114,7 @@ The pipeline writes the following files to `outputs/`:
 
 ## Research framing
 
-The workflow is designed for a short paper on edge-deployed load shaping, with a focus on low-latency local forecasting, deterministic orchestration, and battery-less microgrid constraints.
+The workflow is designed for a short paper on edge-deployed load control, with a focus on low-latency local forecasting, deterministic orchestration, and battery-less microgrid constraints.
 
 ## License
 

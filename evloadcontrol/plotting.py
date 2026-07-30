@@ -1,7 +1,7 @@
 """Plotting helpers, shared by the CLI pipeline and the notebooks.
 
 This module does not force a matplotlib backend: the CLI entry point
-(``evloadshaping.cli``) selects the non-interactive ``Agg`` backend for
+(``evloadcontrol.cli``) selects the non-interactive ``Agg`` backend for
 headless runs, while notebooks keep their own inline backend.
 """
 

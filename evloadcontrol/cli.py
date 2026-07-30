@@ -45,7 +45,7 @@ from .significance import block_bootstrap_mae_diff
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Train edge load-shaping models for EV charging."
+        description="Train edge load-control models for EV charging."
     )
     parser.add_argument(
         "--data-path",
@@ -79,7 +79,7 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help=(
             "Also train and evaluate the PyTorch MLP/LSTM/CNN comparison "
-            "(evloadshaping.torch_models). Requires PyTorch "
+            "(evloadcontrol.torch_models). Requires PyTorch "
             "(pip install -r requirements-torch.txt); not needed for the "
             "default edge pipeline."
         ),
